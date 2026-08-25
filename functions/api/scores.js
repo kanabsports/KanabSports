@@ -32,7 +32,7 @@ export async function onRequestGet(context) {
     const scores = rows.map(row => normalizeScore(row)).filter(Boolean);
 
     const championRow = rows
-      .filter(row => /\bstate\s+champs?\b/i.test(String(row.message || '')))
+      .filter(row => /\[\[STATE_CHAMPION\]\]/i.test(String(row.message || '')) || /\bstate\s+champs?\b/i.test(String(row.message || '')))
       .filter(row => {
         const published = Date.parse(String(row.published_at || row.created_at || ''));
         return Number.isFinite(published) && (Date.now() - published) <= 24 * 60 * 60 * 1000;
