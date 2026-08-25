@@ -3,13 +3,12 @@ export async function onRequest(context) {
   const url = new URL(context.request.url);
   const contentType = response.headers.get('content-type') || '';
 
-  if ((url.pathname !== '/' && url.pathname !== '/index.html') || !contentType.includes('text/html')) {
-    return response;
-  }
+  if (!contentType.includes('text/html')) return response;
 
   let html = await response.text();
 
-  const tickerMarkup = `
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    const tickerMarkup = `
 <div id="recentScoresShell" class="scores-ticker-shell" hidden>
   <div class="wrap scores-ticker">
     <div class="scores-ticker-label">Recent Scores</div>
@@ -17,7 +16,7 @@ export async function onRequest(context) {
   </div>
 </div>`;
 
-  const tickerStyles = `
+    const tickerStyles = `
 <style id="recentScoresStyles">
 .scores-ticker-shell{background:#fff;border-top:1px solid #e5e5e2;border-bottom:1px solid #e5e5e2;overflow:hidden}
 .scores-ticker{display:flex;align-items:stretch;overflow:hidden;min-height:50px}
@@ -32,7 +31,7 @@ export async function onRequest(context) {
 @media(max-width:620px){.scores-ticker{min-height:48px}.scores-ticker-label{padding:0 13px;font-size:9px}.score-tick{padding:0 15px;font-size:12px;gap:7px}}
 </style>`;
 
-  const tickerScript = `
+    const tickerScript = `
 <script id="recentScoresScript">
 (function(){
   const shell=document.getElementById('recentScoresShell');
@@ -85,10 +84,68 @@ export async function onRequest(context) {
 })();
 </script>`;
 
-  if (!html.includes('id="recentScoresShell"')) {
-    html = html.replace('</head>', tickerStyles + '\n</head>');
-    html = html.replace('<section class="section" id="registration">', tickerMarkup + '\n<section class="section" id="registration">');
-    html = html.replace('</body>', tickerScript + '\n</body>');
+    if (!html.includes('id="recentScoresShell"')) {
+      html = html.replace('</head>', tickerStyles + '\n</head>');
+      html = html.replace('<section class="section" id="registration">', tickerMarkup + '\n<section class="section" id="registration">');
+      html = html.replace('</body>', tickerScript + '\n</body>');
+    }
+  }
+
+  if (url.pathname === '/coaches.html' || url.pathname === '/coaches') {
+    const turnstileGuard = `
+<script id="coachTurnstileGuard">
+(function(){
+  const form=document.getElementById('coachForm');
+  const button=document.getElementById('submitButton');
+  const status=document.getElementById('coachStatus');
+  const widget=document.querySelector('.cf-turnstile');
+  if(!form||!button||!status||!widget)return;
+
+  let resetAttempted=false;
+  const tokenInput=()=>form.querySelector('input[name="cf-turnstile-response"]');
+  const tokenReady=()=>Boolean(tokenInput()&&tokenInput().value);
+
+  function sync(){
+    if(tokenReady()){
+      if(status.textContent==='Waiting for verification…') status.textContent='';
+      return true;
+    }
+    return false;
+  }
+
+  form.addEventListener('submit',function(event){
+    if(sync()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    status.textContent='Waiting for verification…';
+    button.disabled=false;
+    if(window.turnstile&&typeof window.turnstile.reset==='function'){
+      try{window.turnstile.reset(widget);}catch(e){}
+    }
+  },true);
+
+  const poll=setInterval(()=>{
+    if(sync()){
+      clearInterval(poll);
+      return;
+    }
+  },250);
+
+  setTimeout(()=>{
+    if(!tokenReady()&&!resetAttempted&&window.turnstile&&typeof window.turnstile.reset==='function'){
+      resetAttempted=true;
+      try{window.turnstile.reset(widget);}catch(e){}
+    }
+  },10000);
+
+  window.addEventListener('pageshow',()=>{
+    if(!tokenReady()&&window.turnstile&&typeof window.turnstile.reset==='function'){
+      try{window.turnstile.reset(widget);}catch(e){}
+    }
+  });
+})();
+</script>`;
+    if (!html.includes('id="coachTurnstileGuard"')) html = html.replace('</body>', turnstileGuard + '\n</body>');
   }
 
   const headers = new Headers(response.headers);
