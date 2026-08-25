@@ -9,7 +9,7 @@ export async function onRequestGet(context) {
     await ensureSchema(env.SPORTS_DB);
     const query = await env.SPORTS_DB.prepare(`
       SELECT id, sport, team, opponent, result, event_date, published_at
-      FROM submissions
+      FROM coach_submissions
       WHERE status='approved'
         AND type='Score'
         AND datetime(COALESCE(published_at, created_at)) >= datetime('now', '-14 days')
@@ -57,7 +57,7 @@ function compactTeam(value) {
 
 async function ensureSchema(db) {
   await db.prepare(`
-    CREATE TABLE IF NOT EXISTS submissions (
+    CREATE TABLE IF NOT EXISTS coach_submissions (
       id TEXT PRIMARY KEY, source TEXT NOT NULL, type TEXT NOT NULL, name TEXT, email TEXT,
       team TEXT, sport TEXT, event_date TEXT, opponent TEXT, result TEXT, link TEXT, message TEXT,
       status TEXT NOT NULL DEFAULT 'pending', review_token_hash TEXT, review_expires_at TEXT,
