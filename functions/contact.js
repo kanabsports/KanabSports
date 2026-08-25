@@ -51,6 +51,8 @@ export async function onRequestPost(context) {
     const result = clean(form.get('result'), 180);
     const link = clean(form.get('link'), 600);
     const message = clean(form.get('message'), 3000);
+    const isStateChampion = source === 'Coaches' && type === 'Score' && String(form.get('championship') || '').toLowerCase() === 'yes';
+    const storedMessage = isStateChampion ? `[[STATE_CHAMPION]]\n${message}` : message;
 
     if (!name || !email || !message || !email.includes('@')) {
       return json({ success: false, error: 'Please complete your name, email, and message.' }, 400);
@@ -68,7 +70,7 @@ export async function onRequestPost(context) {
           INSERT INTO coach_submissions
           (id, source, type, name, email, team, sport, event_date, opponent, result, link, message, status, review_token_hash, review_expires_at, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, datetime('now'))
-        `).bind(id, source, type, name, email, team, sport, date, opponent, result, link, message, tokenHash, expires).run();
+        `).bind(id, source, type, name, email, team, sport, date, opponent, result, link, storedMessage, tokenHash, expires).run();
         review = { id, token: reviewToken };
       } catch (dbError) {
         console.error('Submission storage error', dbError);
@@ -76,10 +78,11 @@ export async function onRequestPost(context) {
     }
 
     const subjectPrefix = source === 'Coaches' ? 'Coach submission' : 'Kanab Sports';
-    const subject = `${subjectPrefix} — ${type}${sport ? ` — ${sport}` : ''}`;
+    const subject = `${subjectPrefix} — ${type}${sport ? ` — ${sport}` : ''}${isStateChampion ? ' — STATE CHAMPIONSHIP' : ''}`;
     const rows = [
       ['Submission', type], ['Submitted by', name], ['Email', email], ['Team / Organization', team],
-      ['Sport', sport], ['Date', date], ['Opponent / Event', opponent], ['Score / Result', result], ['Link', link],
+      ['Sport', sport], ['Date', date], ['Opponent / Event', opponent], ['Score / Result', result],
+      ['State Championship', isStateChampion ? 'YES 🏆' : ''], ['Link', link],
     ].filter(([, value]) => value);
 
     const origin = new URL(request.url).origin;
