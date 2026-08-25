@@ -12,7 +12,7 @@ export async function onRequestGet(context) {
     const tokenHash = await sha256(token);
     const row = await env.SPORTS_DB.prepare(`
       SELECT id, type, team, sport, opponent, result, event_date, status, review_expires_at
-      FROM submissions WHERE review_token_hash = ? LIMIT 1
+      FROM coach_submissions WHERE review_token_hash = ? LIMIT 1
     `).bind(tokenHash).first();
 
     if (!row) return page('This review link is invalid or has already been used.', false, 404);
@@ -23,7 +23,7 @@ export async function onRequestGet(context) {
 
     if (action === 'approve') {
       await env.SPORTS_DB.prepare(`
-        UPDATE submissions
+        UPDATE coach_submissions
         SET status='approved', reviewed_at=datetime('now'), published_at=datetime('now'), review_token_hash=NULL
         WHERE id=? AND status='pending'
       `).bind(row.id).run();
@@ -34,7 +34,7 @@ export async function onRequestGet(context) {
     }
 
     await env.SPORTS_DB.prepare(`
-      UPDATE submissions
+      UPDATE coach_submissions
       SET status='rejected', reviewed_at=datetime('now'), review_token_hash=NULL
       WHERE id=? AND status='pending'
     `).bind(row.id).run();
@@ -47,7 +47,7 @@ export async function onRequestGet(context) {
 
 async function ensureSchema(db) {
   await db.prepare(`
-    CREATE TABLE IF NOT EXISTS submissions (
+    CREATE TABLE IF NOT EXISTS coach_submissions (
       id TEXT PRIMARY KEY, source TEXT NOT NULL, type TEXT NOT NULL, name TEXT, email TEXT,
       team TEXT, sport TEXT, event_date TEXT, opponent TEXT, result TEXT, link TEXT, message TEXT,
       status TEXT NOT NULL DEFAULT 'pending', review_token_hash TEXT, review_expires_at TEXT,
