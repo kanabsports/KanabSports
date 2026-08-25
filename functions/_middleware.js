@@ -109,10 +109,15 @@ export async function onRequest(context) {
   celebration&&celebration.addEventListener('click',(e)=>{if(e.target===celebration)closeChampions();});
   document.addEventListener('keydown',(e)=>{if(e.key==='Escape')closeChampions();});
 
+  const demoCelebration=new URLSearchParams(window.location.search).get('celebration')==='demo';
+  if(demoCelebration){
+    showChampions({team:'Cowgirls',sport:'Soccer',opponent:'Beaver',teamScore:7,opponentScore:3});
+  }
+
   fetch('/api/scores',{headers:{'Accept':'application/json'},cache:'no-store'})
     .then(r=>r.ok?r.json():Promise.reject(new Error('scores unavailable')))
     .then(data=>{
-      if(data?.celebration)showChampions(data.celebration);
+      if(data?.celebration&&!demoCelebration)showChampions(data.celebration);
 
       const cutoff=new Date();cutoff.setHours(0,0,0,0);cutoff.setDate(cutoff.getDate()-14);
       const scores=(Array.isArray(data?.scores)?data.scores:[])
@@ -169,7 +174,30 @@ export async function onRequest(context) {
   const button=document.getElementById('submitButton');
   const status=document.getElementById('coachStatus');
   const widget=document.querySelector('.cf-turnstile');
+  const typeSelect=document.getElementById('type');
+  const resultInput=document.getElementById('result');
   if(!form||!button||!status||!widget)return;
+
+  if(resultInput&&!document.getElementById('championshipField')){
+    const field=document.createElement('div');
+    field.id='championshipField';
+    field.className='field full';
+    field.style.cssText='border:1px solid #343740;background:#15171b;border-radius:12px;padding:14px 16px;';
+    field.innerHTML='<label style="display:flex;align-items:center;gap:12px;color:#fff;font-size:13px;letter-spacing:0;text-transform:none;cursor:pointer"><input id="championship" type="checkbox" name="championship" value="yes" style="width:20px;height:20px;padding:0;margin:0;accent-color:#e32636;flex:0 0 auto"> <span><strong style="display:block;font-size:14px">🏆 State Championship Win</strong><small style="display:block;color:#9da0a7;font-size:12px;margin-top:3px;font-weight:500">Check this only for a final state championship victory. After approval, Kanab Sports celebrates it for 24 hours.</small></span></label>';
+    resultInput.closest('.field')?.insertAdjacentElement('afterend',field);
+  }
+
+  const championshipField=document.getElementById('championshipField');
+  const championshipBox=document.getElementById('championship');
+  function syncChampionship(){
+    if(!championshipField)return;
+    const isScore=(typeSelect?.value||'Score')==='Score';
+    championshipField.style.display=isScore?'flex':'none';
+    if(!isScore&&championshipBox)championshipBox.checked=false;
+  }
+  typeSelect?.addEventListener('change',syncChampionship);
+  document.querySelectorAll('.action[data-type]').forEach(el=>el.addEventListener('click',()=>setTimeout(syncChampionship,0)));
+  syncChampionship();
 
   let resetAttempted=false;
   const tokenInput=()=>form.querySelector('input[name="cf-turnstile-response"]');
@@ -193,6 +221,8 @@ export async function onRequest(context) {
       try{window.turnstile.reset(widget);}catch(e){}
     }
   },true);
+
+  form.addEventListener('reset',()=>setTimeout(()=>{if(championshipBox)championshipBox.checked=false;syncChampionship();},0));
 
   const poll=setInterval(()=>{
     if(sync()){
