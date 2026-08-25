@@ -1,193 +1,31 @@
 export async function onRequestPost(context) {
   const { request, env } = context;
-
   try {
-    const form = await request.formData();
-    const turnstileToken = form.get('cf-turnstile-response');
-    const honeypot = String(form.get('website') || '').trim();
-
-    if (honeypot) return json({ success: true });
-
-    if (!turnstileToken) {
-      return json({ success: false, error: 'Please wait for verification to finish, then try again.' }, 400);
-    }
-    if (!env.TURNSTILE_SECRET_KEY) {
-      return json({ success: false, error: 'Verification service is not configured. Please contact Kanab Sports.' }, 500);
-    }
-    if (!env.RESEND_API_KEY) {
-      return json({ success: false, error: 'Email delivery is unavailable. Please try again.' }, 500);
-    }
-
-    const verifyBody = new URLSearchParams();
-    verifyBody.set('secret', env.TURNSTILE_SECRET_KEY);
-    verifyBody.set('response', turnstileToken);
-    const ip = request.headers.get('CF-Connecting-IP');
-    if (ip) verifyBody.set('remoteip', ip);
-
-    const verifyResponse = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: verifyBody,
-    });
-    const verification = await verifyResponse.json();
-    if (!verification.success) {
-      console.error('Turnstile verification failed', verification['error-codes'] || []);
-      return json({ success: false, error: 'Human verification failed. Please refresh and try again.' }, 403);
-    }
-
-    const clean = (value, max = 1500) => String(value || '')
-      .replace(/[\u0000-\u001F\u007F]/g, ' ')
-      .trim()
-      .slice(0, max);
-
-    const type = clean(form.get('type'), 100) || 'General question';
-    const source = clean(form.get('source'), 80) || 'Contact form';
-    const name = clean(form.get('name'), 120);
-    const email = clean(form.get('email'), 180);
-    const team = clean(form.get('team'), 180);
-    const sport = clean(form.get('sport'), 120);
-    const date = clean(form.get('date'), 80);
-    const opponent = clean(form.get('opponent'), 180);
-    const result = clean(form.get('result'), 180);
-    const link = clean(form.get('link'), 600);
-    const message = clean(form.get('message'), 3000);
-    const isStateChampion = source === 'Coaches' && type === 'Score' && String(form.get('championship') || '').toLowerCase() === 'yes';
-    const storedMessage = isStateChampion ? `[[STATE_CHAMPION]]\n${message}` : message;
-
-    if (!name || !email || !message || !email.includes('@')) {
-      return json({ success: false, error: 'Please complete your name, email, and message.' }, 400);
-    }
-
-    let review = null;
-    if (source === 'Coaches' && env.SPORTS_DB) {
-      try {
-        await ensureSchema(env.SPORTS_DB);
-        const id = crypto.randomUUID();
-        const reviewToken = randomToken();
-        const tokenHash = await sha256(reviewToken);
-        const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        await env.SPORTS_DB.prepare(`
-          INSERT INTO coach_submissions
-          (id, source, type, name, email, team, sport, event_date, opponent, result, link, message, status, review_token_hash, review_expires_at, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, datetime('now'))
-        `).bind(id, source, type, name, email, team, sport, date, opponent, result, link, storedMessage, tokenHash, expires).run();
-        review = { id, token: reviewToken };
-      } catch (dbError) {
-        console.error('Submission storage error', dbError);
-      }
-    }
-
-    const subjectPrefix = source === 'Coaches' ? 'Coach submission' : 'Kanab Sports';
-    const subject = `${subjectPrefix} — ${type}${sport ? ` — ${sport}` : ''}${isStateChampion ? ' — STATE CHAMPIONSHIP' : ''}`;
-    const rows = [
-      ['Submission', type], ['Submitted by', name], ['Email', email], ['Team / Organization', team],
-      ['Sport', sport], ['Date', date], ['Opponent / Event', opponent], ['Score / Result', result],
-      ['State Championship', isStateChampion ? 'YES 🏆' : ''], ['Link', link],
-    ].filter(([, value]) => value);
-
-    const origin = new URL(request.url).origin;
-    const approveUrl = review ? `${origin}/review?token=${encodeURIComponent(review.token)}&action=approve` : '';
-    const rejectUrl = review ? `${origin}/review?token=${encodeURIComponent(review.token)}&action=reject` : '';
-    const reviewText = review ? `\nApprove & publish: ${approveUrl}\nReject: ${rejectUrl}\n` : '';
-    const text = [...rows.map(([label, value]) => `${label}: ${value}`), '', message, reviewText].join('\n');
-
-    const htmlRows = rows.map(([label, value]) =>
-      `<tr><td style="padding:6px 14px 6px 0;font-weight:700;vertical-align:top">${escapeHtml(label)}</td><td style="padding:6px 0;vertical-align:top">${escapeHtml(value)}</td></tr>`
-    ).join('');
-    const reviewButtons = review ? `
-      <div style="margin-top:24px;padding-top:22px;border-top:1px solid #e5e5e5">
-        <div style="font-weight:700;margin-bottom:12px">Publish this submission?</div>
-        <a href="${escapeHtml(approveUrl)}" style="display:inline-block;background:#16833a;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;margin-right:8px">✓ Approve & Publish</a>
-        <a href="${escapeHtml(rejectUrl)}" style="display:inline-block;background:#222;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px">Reject</a>
-        <div style="color:#777;font-size:12px;margin-top:10px">Review links expire in 7 days and can only be used once.</div>
-      </div>` : '';
-
-    const html = `
-      <div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:680px">
-        <h2 style="margin:0 0 18px">${source === 'Coaches' ? 'New Coaches submission' : 'New Kanab Sports submission'}</h2>
-        <table style="border-collapse:collapse;margin-bottom:22px">${htmlRows}</table>
-        <div style="padding:16px 18px;background:#f5f5f5;border-radius:10px;white-space:pre-wrap">${escapeHtml(message)}</div>
-        ${reviewButtons}
-      </div>`;
-
-    const resendResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'Kanab Sports <website@kanabsports.com>',
-        to: ['howdy@kanabsports.com'],
-        reply_to: email,
-        subject,
-        text,
-        html,
-      }),
-    });
-
-    if (!resendResponse.ok) {
-      let detail = '';
-      try { detail = (await resendResponse.json())?.message || ''; } catch {}
-      console.error('Resend error', resendResponse.status, detail);
-      return json({ success: false, error: 'We could not send your message. Please try again.' }, 502);
-    }
-
-    return json({ success: true, reviewReady: Boolean(review) });
-  } catch (error) {
-    console.error('Contact form error', error);
-    return json({ success: false, error: 'Something went wrong. Please try again.' }, 500);
-  }
+    const form=await request.formData(), token=form.get('cf-turnstile-response'), honeypot=String(form.get('website')||'').trim();
+    if(honeypot)return json({success:true});
+    if(!token)return json({success:false,error:'Please wait for verification to finish, then try again.'},400);
+    if(!env.TURNSTILE_SECRET_KEY)return json({success:false,error:'Verification service is not configured. Please contact Kanab Sports.'},500);
+    if(!env.RESEND_API_KEY)return json({success:false,error:'Email delivery is unavailable. Please try again.'},500);
+    const vb=new URLSearchParams();vb.set('secret',env.TURNSTILE_SECRET_KEY);vb.set('response',token);const ip=request.headers.get('CF-Connecting-IP');if(ip)vb.set('remoteip',ip);
+    const vr=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:vb});const verification=await vr.json();if(!verification.success)return json({success:false,error:'Human verification failed. Please refresh and try again.'},403);
+    const clean=(v,m=1500)=>String(v||'').replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,m);
+    const type=clean(form.get('type'),100)||'General question',source=clean(form.get('source'),80)||'Contact form',name=clean(form.get('name'),120),email=clean(form.get('email'),180),team=clean(form.get('team'),180),sport=clean(form.get('sport'),120),date=clean(form.get('date'),80),opponent=clean(form.get('opponent'),180),result=clean(form.get('result'),180),link=clean(form.get('link'),600),message=clean(form.get('message'),3000);
+    const champ=source==='Coaches'&&type==='Score'&&String(form.get('championship')||'').toLowerCase()==='yes';const stored=champ?'[[STATE_CHAMPION]]\n'+message:message;
+    if(!name||!email||!message||!email.includes('@'))return json({success:false,error:'Please complete your name, email, and message.'},400);
+    let review=null;if(source==='Coaches'&&env.SPORTS_DB){await ensureSchema(env.SPORTS_DB);const id=crypto.randomUUID(),rt=randomToken(),hash=await sha256(rt),expires=new Date(Date.now()+7*86400000).toISOString();await env.SPORTS_DB.prepare(`INSERT INTO coach_submissions (id,source,type,name,email,team,sport,event_date,opponent,result,link,message,status,review_token_hash,review_expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,datetime('now'))`).bind(id,source,type,name,email,team,sport,date,opponent,result,link,stored,hash,expires).run();review={id,token:rt}}
+    const subject=`${source==='Coaches'?'Coach submission':'Kanab Sports'} — ${type}${sport?' — '+sport:''}${champ?' — STATE CHAMPIONSHIP':''}`;
+    const rows=[['Submission',type],['Submitted by',name],['Email',email],['Team / Organization',team],['Sport',sport],['Date',date],['Opponent / Event',opponent],['Score / Result',result],['State Championship',champ?'YES 🏆':''],['Link',link]].filter(([,v])=>v);
+    const origin=new URL(request.url).origin,approve=review?`${origin}/review?token=${encodeURIComponent(review.token)}&action=approve`:'',reject=review?`${origin}/review?token=${encodeURIComponent(review.token)}&action=reject`:'',feature=review&&type==='Event'?`${origin}/review?token=${encodeURIComponent(review.token)}&action=feature`:'';
+    const text=[...rows.map(([l,v])=>`${l}: ${v}`),'',message,review?`\nApprove & publish: ${approve}${feature?'\nFeature now: '+feature:''}\nDeny: ${reject}\n`:''].join('\n');
+    const htmlRows=rows.map(([l,v])=>`<tr><td style="padding:6px 14px 6px 0;font-weight:700;vertical-align:top">${escapeHtml(l)}</td><td style="padding:6px 0;vertical-align:top">${escapeHtml(v)}</td></tr>`).join('');
+    const buttons=review?`<div style="margin-top:24px;padding-top:22px;border-top:1px solid #e5e5e5"><div style="font-weight:700;margin-bottom:12px">What should Kanab Sports do with this submission?</div><a href="${escapeHtml(approve)}" style="display:inline-block;background:#16833a;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;margin:0 8px 8px 0">✓ Approve</a>${feature?`<a href="${escapeHtml(feature)}" style="display:inline-block;background:#e32636;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;margin:0 8px 8px 0">★ Feature Now</a>`:''}<a href="${escapeHtml(reject)}" style="display:inline-block;background:#222;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;margin-bottom:8px">Deny</a><div style="color:#777;font-size:12px;margin-top:10px">Approve publishes normally. Feature Now pins an event to the top of Happening Now. Review links expire in 7 days and can only be used once.</div></div>`:'';
+    const html=`<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:680px"><h2 style="margin:0 0 18px">${source==='Coaches'?'New Coaches submission':'New Kanab Sports submission'}</h2><table style="border-collapse:collapse;margin-bottom:22px">${htmlRows}</table><div style="padding:16px 18px;background:#f5f5f5;border-radius:10px;white-space:pre-wrap">${escapeHtml(message)}</div>${buttons}</div>`;
+    const rr=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:['howdy@kanabsports.com'],reply_to:email,subject,text,html})});if(!rr.ok)return json({success:false,error:'We could not send your message. Please try again.'},502);return json({success:true,reviewReady:Boolean(review)});
+  }catch(error){console.error('Contact form error',error);return json({success:false,error:'Something went wrong. Please try again.'},500)}
 }
-
-export function onRequestGet() {
-  return json({ success: false, error: 'Method not allowed.' }, 405);
-}
-
-async function ensureSchema(db) {
-  await db.prepare(`
-    CREATE TABLE IF NOT EXISTS coach_submissions (
-      id TEXT PRIMARY KEY,
-      source TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT,
-      email TEXT,
-      team TEXT,
-      sport TEXT,
-      event_date TEXT,
-      opponent TEXT,
-      result TEXT,
-      link TEXT,
-      message TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      review_token_hash TEXT,
-      review_expires_at TEXT,
-      reviewed_at TEXT,
-      published_at TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `).run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_coach_submissions_status_type ON coach_submissions(status, type)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_coach_submissions_published ON coach_submissions(published_at)').run();
-}
-
-function randomToken() {
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function sha256(value) {
-  const data = new TextEncoder().encode(value);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
-}
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
-  });
-}
+export function onRequestGet(){return json({success:false,error:'Method not allowed.'},405)}
+async function ensureSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS coach_submissions (id TEXT PRIMARY KEY,source TEXT NOT NULL,type TEXT NOT NULL,name TEXT,email TEXT,team TEXT,sport TEXT,event_date TEXT,opponent TEXT,result TEXT,link TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,published_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();try{await db.prepare(`ALTER TABLE coach_submissions ADD COLUMN featured INTEGER NOT NULL DEFAULT 0`).run()}catch{} }
+function randomToken(){const b=crypto.getRandomValues(new Uint8Array(24));return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}
+async function sha256(v){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));return Array.from(new Uint8Array(h),b=>b.toString(16).padStart(2,'0')).join('')}
+function escapeHtml(v){return String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
+function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
