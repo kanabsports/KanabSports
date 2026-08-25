@@ -61,7 +61,7 @@ export async function onRequestPost(context) {
         const tokenHash = await sha256(reviewToken);
         const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
         await env.SPORTS_DB.prepare(`
-          INSERT INTO submissions
+          INSERT INTO coach_submissions
           (id, source, type, name, email, team, sport, event_date, opponent, result, link, message, status, review_token_hash, review_expires_at, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, datetime('now'))
         `).bind(id, source, type, name, email, team, sport, date, opponent, result, link, message, tokenHash, expires).run();
@@ -81,7 +81,7 @@ export async function onRequestPost(context) {
     const origin = new URL(request.url).origin;
     const approveUrl = review ? `${origin}/review?token=${encodeURIComponent(review.token)}&action=approve` : '';
     const rejectUrl = review ? `${origin}/review?token=${encodeURIComponent(review.token)}&action=reject` : '';
-    const reviewText = review ? `\nReview: ${approveUrl}\nReject: ${rejectUrl}\n` : '';
+    const reviewText = review ? `\nApprove & publish: ${approveUrl}\nReject: ${rejectUrl}\n` : '';
     const text = [...rows.map(([label, value]) => `${label}: ${value}`), '', message, reviewText].join('\n');
 
     const htmlRows = rows.map(([label, value]) =>
@@ -136,7 +136,7 @@ export function onRequestGet() {
 
 async function ensureSchema(db) {
   await db.prepare(`
-    CREATE TABLE IF NOT EXISTS submissions (
+    CREATE TABLE IF NOT EXISTS coach_submissions (
       id TEXT PRIMARY KEY,
       source TEXT NOT NULL,
       type TEXT NOT NULL,
@@ -157,8 +157,8 @@ async function ensureSchema(db) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `).run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_submissions_status_type ON submissions(status, type)').run();
-  await db.prepare('CREATE INDEX IF NOT EXISTS idx_submissions_published ON submissions(published_at)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_coach_submissions_status_type ON coach_submissions(status, type)').run();
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_coach_submissions_published ON coach_submissions(published_at)').run();
 }
 
 function randomToken() {
