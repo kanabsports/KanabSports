@@ -8,8 +8,11 @@ export async function onRequestPost(context) {
 
     if (honeypot) return json({ success: true });
 
-    if (!turnstileToken || !env.TURNSTILE_SECRET_KEY) {
-      return json({ success: false, error: 'Verification is unavailable. Please try again.' }, 400);
+    if (!turnstileToken) {
+      return json({ success: false, error: 'Please wait for verification to finish, then try again.' }, 400);
+    }
+    if (!env.TURNSTILE_SECRET_KEY) {
+      return json({ success: false, error: 'Verification service is not configured. Please contact Kanab Sports.' }, 500);
     }
     if (!env.RESEND_API_KEY) {
       return json({ success: false, error: 'Email delivery is unavailable. Please try again.' }, 500);
@@ -28,7 +31,8 @@ export async function onRequestPost(context) {
     });
     const verification = await verifyResponse.json();
     if (!verification.success) {
-      return json({ success: false, error: 'Human verification failed. Please try again.' }, 403);
+      console.error('Turnstile verification failed', verification['error-codes'] || []);
+      return json({ success: false, error: 'Human verification failed. Please refresh and try again.' }, 403);
     }
 
     const clean = (value, max = 1500) => String(value || '')
