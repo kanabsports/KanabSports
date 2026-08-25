@@ -14,6 +14,10 @@ export async function onRequestPost(context) {
       return json({ success: false, error: 'Verification is unavailable. Please try again.' }, 400);
     }
 
+    if (!env.RESEND_API_KEY) {
+      return json({ success: false, error: 'Email delivery is unavailable. Please try again.' }, 500);
+    }
+
     const verifyBody = new URLSearchParams();
     verifyBody.set('secret', env.TURNSTILE_SECRET_KEY);
     verifyBody.set('response', token);
@@ -44,7 +48,7 @@ export async function onRequestPost(context) {
     }
 
     const subject = `Kanab Sports — ${type}${sport ? ` — ${sport}` : ''}`;
-    const body = [
+    const text = [
       `Name: ${name}`,
       `Email: ${email}`,
       `Type: ${type}`,
@@ -54,15 +58,59 @@ export async function onRequestPost(context) {
       message,
     ].filter(Boolean).join('\n');
 
-    const mailto = `mailto:howdy@kanabsports.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    return json({ success: true, mailto });
+    const html = `
+      <div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:640px">
+        <h2 style="margin:0 0 18px">New Kanab Sports submission</h2>
+        <p><strong>Name:</strong> ${escapeHtml(name)}<br>
+        <strong>Email:</strong> ${escapeHtml(email)}<br>
+        <strong>Type:</strong> ${escapeHtml(type)}${team ? `<br><strong>Team / Organization:</strong> ${escapeHtml(team)}` : ''}${sport ? `<br><strong>Sport:</strong> ${escapeHtml(sport)}` : ''}</p>
+        <div style="margin-top:22px;padding:16px 18px;background:#f5f5f5;border-radius:10px;white-space:pre-wrap">${escapeHtml(message)}</div>
+      </div>`;
+
+    const resendResponse = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'Kanab Sports <website@kanabsports.com>',
+        to: ['howdy@kanabsports.com'],
+        reply_to: email,
+        subject,
+        text,
+        html,
+      }),
+    });
+
+    if (!resendResponse.ok) {
+      let detail = '';
+      try {
+        const errorData = await resendResponse.json();
+        detail = errorData?.message || '';
+      } catch {}
+      console.error('Resend error', resendResponse.status, detail);
+      return json({ success: false, error: 'We could not send your message. Please try again.' }, 502);
+    }
+
+    return json({ success: true });
   } catch (error) {
+    console.error('Contact form error', error);
     return json({ success: false, error: 'Something went wrong. Please try again.' }, 500);
   }
 }
 
 export function onRequestGet() {
   return json({ success: false, error: 'Method not allowed.' }, 405);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 function json(data, status = 200) {
