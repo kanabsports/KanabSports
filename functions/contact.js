@@ -6,9 +6,7 @@ export async function onRequestPost(context) {
     const token = form.get('cf-turnstile-response');
     const honeypot = String(form.get('website') || '').trim();
 
-    if (honeypot) {
-      return json({ success: true });
-    }
+    if (honeypot) return json({ success: true });
 
     if (!token || !env.TURNSTILE_SECRET_KEY) {
       return json({ success: false, error: 'Verification is unavailable. Please try again.' }, 400);
@@ -35,42 +33,63 @@ export async function onRequestPost(context) {
       return json({ success: false, error: 'Human verification failed. Please try again.' }, 403);
     }
 
-    const clean = (value, max = 1500) => String(value || '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, max);
-    const type = clean(form.get('type'), 80) || 'General question';
+    const clean = (value, max = 1500) => String(value || '')
+      .replace(/[\u0000-\u001F\u007F]/g, ' ')
+      .trim()
+      .slice(0, max);
+
+    const type = clean(form.get('type'), 100) || 'General question';
+    const source = clean(form.get('source'), 80) || 'Contact form';
     const name = clean(form.get('name'), 120);
     const email = clean(form.get('email'), 180);
     const team = clean(form.get('team'), 180);
     const sport = clean(form.get('sport'), 120);
-    const message = clean(form.get('message'), 2500);
+    const date = clean(form.get('date'), 80);
+    const opponent = clean(form.get('opponent'), 180);
+    const result = clean(form.get('result'), 180);
+    const link = clean(form.get('link'), 600);
+    const message = clean(form.get('message'), 3000);
 
     if (!name || !email || !message || !email.includes('@')) {
       return json({ success: false, error: 'Please complete your name, email, and message.' }, 400);
     }
 
-    const subject = `Kanab Sports — ${type}${sport ? ` — ${sport}` : ''}`;
+    const subjectPrefix = source === 'Coaches' ? 'Coach submission' : 'Kanab Sports';
+    const subject = `${subjectPrefix} — ${type}${sport ? ` — ${sport}` : ''}`;
+
+    const rows = [
+      ['Submission', type],
+      ['Submitted by', name],
+      ['Email', email],
+      ['Team / Organization', team],
+      ['Sport', sport],
+      ['Date', date],
+      ['Opponent / Event', opponent],
+      ['Score / Result', result],
+      ['Link', link],
+    ].filter(([, value]) => value);
+
     const text = [
-      `Name: ${name}`,
-      `Email: ${email}`,
-      `Type: ${type}`,
-      team ? `Team / Organization: ${team}` : '',
-      sport ? `Sport: ${sport}` : '',
+      ...rows.map(([label, value]) => `${label}: ${value}`),
       '',
       message,
-    ].filter(Boolean).join('\n');
+    ].join('\n');
+
+    const htmlRows = rows.map(([label, value]) =>
+      `<tr><td style="padding:6px 14px 6px 0;font-weight:700;vertical-align:top">${escapeHtml(label)}</td><td style="padding:6px 0;vertical-align:top">${escapeHtml(value)}</td></tr>`
+    ).join('');
 
     const html = `
-      <div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:640px">
-        <h2 style="margin:0 0 18px">New Kanab Sports submission</h2>
-        <p><strong>Name:</strong> ${escapeHtml(name)}<br>
-        <strong>Email:</strong> ${escapeHtml(email)}<br>
-        <strong>Type:</strong> ${escapeHtml(type)}${team ? `<br><strong>Team / Organization:</strong> ${escapeHtml(team)}` : ''}${sport ? `<br><strong>Sport:</strong> ${escapeHtml(sport)}` : ''}</p>
-        <div style="margin-top:22px;padding:16px 18px;background:#f5f5f5;border-radius:10px;white-space:pre-wrap">${escapeHtml(message)}</div>
+      <div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:680px">
+        <h2 style="margin:0 0 18px">${source === 'Coaches' ? 'New Coaches submission' : 'New Kanab Sports submission'}</h2>
+        <table style="border-collapse:collapse;margin-bottom:22px">${htmlRows}</table>
+        <div style="padding:16px 18px;background:#f5f5f5;border-radius:10px;white-space:pre-wrap">${escapeHtml(message)}</div>
       </div>`;
 
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${env.RESEND_API_KEY}`,
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
