@@ -2,7 +2,7 @@ export async function onRequestGet(context) {
   const { env } = context;
 
   if (!env.SPORTS_DB) {
-    return json({ scores: [] });
+    return json({ scores: [], celebration: null });
   }
 
   try {
@@ -19,7 +19,7 @@ export async function onRequestGet(context) {
     `).run();
 
     const query = await env.SPORTS_DB.prepare(`
-      SELECT id, sport, team, opponent, result, event_date, published_at
+      SELECT id, sport, team, opponent, result, event_date, message, published_at, created_at
       FROM coach_submissions
       WHERE status='approved'
         AND type='Score'
@@ -28,11 +28,22 @@ export async function onRequestGet(context) {
       LIMIT 20
     `).all();
 
-    const scores = (query.results || []).map(row => normalizeScore(row)).filter(Boolean);
-    return json({ scores });
+    const rows = query.results || [];
+    const scores = rows.map(row => normalizeScore(row)).filter(Boolean);
+
+    const championRow = rows
+      .filter(row => /\bstate\s+champs?\b/i.test(String(row.message || '')))
+      .filter(row => {
+        const published = Date.parse(String(row.published_at || row.created_at || ''));
+        return Number.isFinite(published) && (Date.now() - published) <= 24 * 60 * 60 * 1000;
+      })
+      .sort((a, b) => Date.parse(String(b.published_at || b.created_at || '')) - Date.parse(String(a.published_at || a.created_at || '')))[0];
+
+    const celebration = championRow ? normalizeCelebration(championRow) : null;
+    return json({ scores, celebration });
   } catch (error) {
     console.error('Scores API error', error);
-    return json({ scores: [] });
+    return json({ scores: [], celebration: null });
   }
 }
 
@@ -48,6 +59,19 @@ function normalizeScore(row) {
     result: row.result || '',
     status: 'FINAL',
     date: row.event_date || String(row.published_at || '').slice(0, 10),
+  };
+}
+
+function normalizeCelebration(row) {
+  const parsed = parseScores(row.result || '');
+  return {
+    id: row.id,
+    sport: row.sport || 'Sport',
+    team: compactTeam(row.team || 'Kanab'),
+    opponent: row.opponent || '',
+    teamScore: parsed?.teamScore ?? null,
+    opponentScore: parsed?.opponentScore ?? null,
+    publishedAt: row.published_at || row.created_at || '',
   };
 }
 
