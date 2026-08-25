@@ -7,6 +7,17 @@ export async function onRequestGet(context) {
 
   try {
     await ensureSchema(env.SPORTS_DB);
+
+    // One-time cleanup for the temporary State Champs test submission.
+    await env.SPORTS_DB.prepare(`
+      DELETE FROM coach_submissions
+      WHERE type='Score'
+        AND lower(trim(team))='cowgirls'
+        AND lower(trim(opponent))='beaver'
+        AND replace(replace(trim(result), ' ', ''), '—', '-') IN ('7-3','7–3')
+        AND lower(trim(message))='state champs'
+    `).run();
+
     const query = await env.SPORTS_DB.prepare(`
       SELECT id, sport, team, opponent, result, event_date, published_at
       FROM coach_submissions
