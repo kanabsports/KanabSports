@@ -47,8 +47,10 @@ async function reviewDocument(db, document, action) {
   const nextStatus = action === 'approve' ? 'approved' : 'rejected';
   await db.prepare(`UPDATE coach_documents SET status=?,reviewed_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(nextStatus, document.id).run();
   const label = `${document.document_type} · ${document.sport} · ${document.season}`;
+  let devSlug = null;
+  try { devSlug = (await db.prepare(`SELECT slug FROM dev_documents WHERE document_id=? LIMIT 1`).bind(document.id).first())?.slug || null; } catch {}
   return action === 'approve'
-    ? page(`Approved privately: ${label}`, true, 200, 'The PDF remains in your email and was not posted publicly.')
+    ? page(`Approved: ${label}`, true, 200, devSlug ? 'The development preview is now live.' : 'The PDF remains private.', devSlug ? '/dev-coach-documents.html' : '/', devSlug ? 'View development preview' : 'Back to Kanab Sports')
     : page(`Denied: ${label}`, true, 200, 'Nothing was published.');
 }
 
@@ -67,8 +69,8 @@ async function sha256(value) {
   return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function page(message, success, status, detail = 'You can close this page when you’re finished.') {
-  return new Response(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kanab Sports Review</title><style>body{margin:0;background:#0b0c0f;color:white;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;display:grid;place-items:center;min-height:100vh}.card{width:min(560px,calc(100% - 32px));background:#15171b;border:1px solid #2d3036;border-radius:18px;padding:32px}.brand{font-weight:950;font-size:24px;margin-bottom:24px}.brand span{color:#e32636}.badge{display:inline-block;padding:8px 11px;border-radius:999px;background:${success ? '#123d20' : '#44191d'};color:${success ? '#86e39c' : '#ff9ba4'};font-size:12px;font-weight:900;text-transform:uppercase}h1{font-size:32px;line-height:1.05;margin:16px 0 10px}p{color:#b9bcc4}.button{display:inline-block;margin-top:18px;background:#e32636;color:white;text-decoration:none;font-weight:900;padding:12px 16px;border-radius:9px}</style></head><body><main class="card"><div class="brand">KANAB <span>SPORTS</span></div><div class="badge">${success ? 'Done' : 'Needs attention'}</div><h1>${escapeHtml(message)}</h1><p>${escapeHtml(detail)}</p><a class="button" href="/">Back to Kanab Sports</a></main></body></html>`, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+function page(message, success, status, detail = 'You can close this page when you’re finished.', href = '/', buttonLabel = 'Back to Kanab Sports') {
+  return new Response(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kanab Sports Review</title><style>body{margin:0;background:#0b0c0f;color:white;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;display:grid;place-items:center;min-height:100vh}.card{width:min(560px,calc(100% - 32px));background:#15171b;border:1px solid #2d3036;border-radius:18px;padding:32px}.brand{font-weight:950;font-size:24px;margin-bottom:24px}.brand span{color:#e32636}.badge{display:inline-block;padding:8px 11px;border-radius:999px;background:${success ? '#123d20' : '#44191d'};color:${success ? '#86e39c' : '#ff9ba4'};font-size:12px;font-weight:900;text-transform:uppercase}h1{font-size:32px;line-height:1.05;margin:16px 0 10px}p{color:#b9bcc4}.button{display:inline-block;margin-top:18px;background:#e32636;color:white;text-decoration:none;font-weight:900;padding:12px 16px;border-radius:9px}</style></head><body><main class="card"><div class="brand">KANAB <span>SPORTS</span></div><div class="badge">${success ? 'Done' : 'Needs attention'}</div><h1>${escapeHtml(message)}</h1><p>${escapeHtml(detail)}</p><a class="button" href="${escapeHtml(href)}">${escapeHtml(buttonLabel)}</a></main></body></html>`, { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
 function escapeHtml(value) { return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
