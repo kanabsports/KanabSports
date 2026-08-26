@@ -2,6 +2,7 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   try {
     const form=await request.formData(), documentAction=String(form.get('action')||'').trim();
+    if(documentAction==='upload-direct')return uploadCoachDocumentDirect(request,env,form);
     if(documentAction==='request-verification')return requestCoachVerification(request,env,form);
     if(documentAction==='upload')return uploadCoachDocument(request,env,form);
     const token=form.get('cf-turnstile-response'), honeypot=String(form.get('website')||'').trim();
@@ -39,6 +40,39 @@ function escapeHtml(v){return String(v).replaceAll('&','&amp;').replaceAll('<','
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
 
 const MAX_PDF_BYTES=5*1024*1024,ADMIN_EMAIL='howdy@kanabsports.com';
+async function uploadCoachDocumentDirect(request,env,form){
+  if(!env.SPORTS_DB||!env.RESEND_API_KEY||!env.COACH_ACCESS_CODE)return json({success:false,error:'Coach uploads are not configured yet.'},503);
+  if(cleanField(form.get('website'),100))return json({success:true,message:'Submitted.'});
+  const coachCode=cleanField(form.get('coach_code'),100),expected=String(env.COACH_ACCESS_CODE).trim();
+  if(!constantTimeTextEqual(coachCode,expected))return json({success:false,error:'The coach upload password is incorrect.'},403);
+  const name=cleanField(form.get('name'),120),email=cleanField(form.get('email'),180).toLowerCase(),sport=cleanField(form.get('sport'),120),team=cleanField(form.get('team'),180),season=cleanField(form.get('season'),100),documentType=cleanField(form.get('document_type'),80)||'Roster and schedule',notes=cleanField(form.get('notes'),1500);
+  if(!name||!validEmail(email)||!sport||!team||!season)return json({success:false,error:'Please complete the coach, email, sport, team, and season.'},400);
+  const scheduleUrl=cleanMaxPrepsUrl(form.get('schedule_url')),rosterUrl=cleanMaxPrepsUrl(form.get('roster_url'));
+  if((form.get('schedule_url')&&!scheduleUrl)||(form.get('roster_url')&&!rosterUrl))return json({success:false,error:'MaxPreps links must be complete maxpreps.com URLs.'},400);
+  const file=form.get('pdf'),hasFile=Boolean(file&&typeof file.arrayBuffer==='function'&&file.name);
+  if(!hasFile&&!scheduleUrl&&!rosterUrl)return json({success:false,error:'Add at least one MaxPreps link or attach a PDF.'},400);
+  let bytes=new Uint8Array(),filename='MaxPreps links';
+  if(hasFile){
+    if(file.size<5||file.size>MAX_PDF_BYTES)return json({success:false,error:'The PDF must be 5 MB or smaller.'},413);
+    if(file.type&&file.type!=='application/pdf')return json({success:false,error:'Only PDF files are accepted.'},415);
+    bytes=new Uint8Array(await file.arrayBuffer());if(String.fromCharCode(...bytes.subarray(0,5))!=='%PDF-')return json({success:false,error:'That file does not appear to be a valid PDF.'},415);
+    filename=safeCoachFilename(file.name);
+  }
+  await ensureSchema(env.SPORTS_DB);
+  const id=crypto.randomUUID(),reviewToken=randomToken(),reviewHash=await sha256(reviewToken),reviewExpires=new Date(Date.now()+7*86400000).toISOString();
+  const sourceNotes=[notes,scheduleUrl?`MaxPreps schedule: ${scheduleUrl}`:'',rosterUrl?`MaxPreps roster: ${rosterUrl}`:''].filter(Boolean).join('\n');
+  await env.SPORTS_DB.prepare(`INSERT INTO coach_documents (id,verification_id,name,email,sport,team,document_type,season,notes,filename,byte_size,status,review_token_hash,review_expires_at,is_test,test_expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,0,NULL,datetime('now'))`).bind(id,'shared-password',name,email,sport,team,documentType,season,sourceNotes,filename,bytes.byteLength,reviewHash,reviewExpires).run();
+  const origin=new URL(request.url).origin,approve=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=approve`,reject=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=reject`;
+  const rows=[['Coach',name],['Email',email],['Sport',sport],['Team',team],['Season',season],['Information',documentType],['PDF',hasFile?filename:'Not attached'],['MaxPreps schedule',scheduleUrl],['MaxPreps roster',rosterUrl]].filter(([,v])=>v);
+  const text=`Coach submission received.\n\n${rows.map(([l,v])=>`${l}: ${v}`).join('\n')}${notes?`\n\nNotes: ${notes}`:''}\n\nApprove: ${approve}\nDeny: ${reject}`;
+  const htmlRows=rows.map(([l,v])=>`<tr><td style="padding:6px 14px 6px 0;font-weight:700;vertical-align:top">${escapeHtml(l)}</td><td style="padding:6px 0;vertical-align:top">${/^https:\/\//.test(v)?`<a href="${escapeHtml(v)}">${escapeHtml(v)}</a>`:escapeHtml(v)}</td></tr>`).join('');
+  const html=`<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:660px"><div style="font-size:12px;font-weight:800;color:#a51420;text-transform:uppercase">Coach submission</div><h2>${escapeHtml(team)} · ${escapeHtml(sport)}</h2><table style="border-collapse:collapse;margin:18px 0">${htmlRows}</table>${notes?`<div style="padding:14px;background:#f5f5f5;border-radius:8px"><strong>Notes</strong><br>${escapeHtml(notes)}</div>`:''}<div style="margin-top:24px"><a href="${escapeHtml(approve)}" style="display:block;background:#16833a;color:#fff;text-decoration:none;text-align:center;font-size:20px;font-weight:800;padding:18px 24px;border-radius:10px">✓ Approve</a><div style="margin-top:30px;padding-top:18px;border-top:1px solid #e5e5e5;text-align:center"><a href="${escapeHtml(reject)}" style="display:inline-block;color:#9d2028;text-decoration:none;font-size:13px;font-weight:700;padding:10px 16px;border:1px solid #d8a8ab;border-radius:8px">Deny submission</a><div style="color:#777;font-size:11px;margin-top:7px">Deny requires a second confirmation.</div></div></div></div>`;
+  const payload={from:'Kanab Sports <website@kanabsports.com>',to:[ADMIN_EMAIL],reply_to:email,subject:`Coach upload — ${team} — ${sport}`,text,html};
+  if(hasFile)payload.attachments=[{filename,content:toBase64(bytes)}];
+  const sent=await sendCoachEmail(env.RESEND_API_KEY,payload,`coach-direct-${id}`);
+  if(!sent){await env.SPORTS_DB.prepare(`DELETE FROM coach_documents WHERE id=?`).bind(id).run();return json({success:false,error:'The submission email could not be delivered. Please try again.'},502)}
+  return json({success:true,message:'Submitted. Kanab Sports received one approval email—no verification email or extra receipt.'});
+}
 async function requestCoachVerification(request,env,form){
   if(!env.SPORTS_DB||!env.RESEND_API_KEY||!env.TURNSTILE_SECRET_KEY)return json({success:false,error:'Coach document uploads are not configured yet.'},503);
   if(cleanField(form.get('website'),100))return json({success:true});
@@ -95,3 +129,5 @@ function safeCoachFilename(value){const cleaned=String(value).replace(/[^a-zA-Z0
 function article(value){return /^[aeiou]/i.test(value)?'an':'a'}
 function cleanField(value,max=500){return String(value||'').replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,max)}
 function validEmail(value){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)}
+function cleanMaxPrepsUrl(value){const raw=cleanField(value,800);if(!raw)return'';try{const u=new URL(raw);return u.protocol==='https:'&&(u.hostname==='maxpreps.com'||u.hostname.endsWith('.maxpreps.com'))?u.href:''}catch{return''}}
+function constantTimeTextEqual(a,b){if(a.length!==b.length)return false;let result=0;for(let i=0;i<a.length;i++)result|=a.charCodeAt(i)^b.charCodeAt(i);return result===0}
