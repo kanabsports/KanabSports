@@ -12,7 +12,7 @@ export async function onRequest(context){
       html=html.replace('<section class="section white" id="contact">',updates+'\n<section class="section white" id="contact">');
     }
     html=html.replaceAll('href="#registration"','href="#rec"');
-    if(!html.includes('id="ks-home-tweaks"'))html=html.replace('</head>',`<style id="ks-home-tweaks">.scores-ticker-shell{margin-top:125px!important}</style></head>`);
+    if(!html.includes('id="ks-home-tweaks"'))html=html.replace('</head>',`<style id="ks-home-tweaks">.scores-ticker-shell{margin-top:15px!important}</style></head>`);
     if(!html.includes('/happening-sort.js'))html=html.replace('</body>','<script src="/happening-sort.js" defer></script>\n</body>');
   }
 
