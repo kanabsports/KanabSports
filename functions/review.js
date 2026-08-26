@@ -14,6 +14,9 @@ export async function onRequestGet(context) {
     if (document) return reviewDocument(env.SPORTS_DB, document, action, token, url.origin);
     if (action === 'delete') return page('This delete link is invalid or the test has already expired.', false, 404);
 
+    const accessRequest = await env.SPORTS_DB.prepare(`SELECT id,name,email,organization,sport,role,status,review_expires_at FROM coach_access_requests WHERE review_token_hash=? LIMIT 1`).bind(hash).first();
+    if (accessRequest) return reviewCoachAccess(env, accessRequest, action, token, url.origin);
+
     const row = await env.SPORTS_DB.prepare(`SELECT id,type,team,sport,opponent,result,event_date,status,review_expires_at FROM coach_submissions WHERE review_token_hash=? LIMIT 1`).bind(hash).first();
     if (!row) return page('This review link is invalid or has already been used.', false, 404);
     if (row.status !== 'pending') return page(`This submission has already been ${row.status}.`, row.status === 'approved', 409);
@@ -31,6 +34,27 @@ export async function onRequestGet(context) {
     console.error(JSON.stringify({ message: 'review error', error: error instanceof Error ? error.message : String(error) }));
     return page('Something went wrong while reviewing this submission.', false, 500);
   }
+}
+
+async function reviewCoachAccess(env, request, action, token, origin) {
+  if (request.status !== 'pending') return page(`This coach request has already been ${request.status}.`, request.status === 'approved', 409);
+  if (!request.review_expires_at || Date.parse(request.review_expires_at) < Date.now()) return page('This coach access link has expired.', false, 410);
+  if (action === 'feature' || action === 'delete') return page('That action is not available for coach access requests.', false, 400);
+  const label = `Coach access · ${request.name} · ${request.sport}`;
+  if (action === 'reject') return denyConfirmation(origin, token, label);
+  if (action === 'confirm-reject') {
+    await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET status='rejected',reviewed_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(request.id).run();
+    return page('Coach access denied. No password was sent.', true, 200);
+  }
+  if (!env.RESEND_API_KEY || !env.COACH_ACCESS_CODE) return page('The password email is not configured yet, so this request remains pending.', false, 503);
+  const uploadUrl = `${origin}/coach-documents.html`;
+  const subject = 'Your Kanab Sports coach upload access';
+  const text = `Hi ${request.name},\n\nYour coach access request has been approved.\n\nUpload page: ${uploadUrl}\nCoach password: ${env.COACH_ACCESS_CODE}\n\nPlease keep this password within your coaching staff.`;
+  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111;max-width:620px"><div style="font-size:12px;font-weight:800;color:#a51420;text-transform:uppercase">Kanab Sports</div><h2>Your coach access is approved</h2><p>Hi ${escapeHtml(request.name)},</p><p>You can now submit a roster, schedule, or MaxPreps link using the coach upload page.</p><p><a href="${escapeHtml(uploadUrl)}" style="display:block;background:#e32636;color:#fff;text-decoration:none;text-align:center;font-size:19px;font-weight:800;padding:17px 22px;border-radius:10px">Open coach upload</a></p><div style="margin-top:20px;padding:16px;background:#f3f3f3;border-radius:9px"><strong>Coach password</strong><br><span style="font-size:22px;letter-spacing:1px">${escapeHtml(env.COACH_ACCESS_CODE)}</span></div><p style="color:#666;font-size:13px">Please keep this password within your coaching staff.</p></div>`;
+  const sent = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json', 'Idempotency-Key': `coach-access-approved-${request.id}` }, body: JSON.stringify({ from: 'Kanab Sports <website@kanabsports.com>', to: [request.email], subject, text, html }) });
+  if (!sent.ok) return page('The coach was verified, but the password email could not be sent. The request remains pending so you can try again.', false, 502);
+  await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET status='approved',reviewed_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(request.id).run();
+  return page(`Coach approved: ${request.name}`, true, 200, `The upload password was emailed to ${request.email}.`);
 }
 
 async function reviewDocument(db, document, action, token, origin) {
@@ -60,6 +84,7 @@ async function ensureSchema(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS coach_submissions (id TEXT PRIMARY KEY,source TEXT NOT NULL,type TEXT NOT NULL,name TEXT,email TEXT,team TEXT,sport TEXT,event_date TEXT,opponent TEXT,result TEXT,link TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,published_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
   try { await db.prepare(`ALTER TABLE coach_submissions ADD COLUMN featured INTEGER NOT NULL DEFAULT 0`).run(); } catch {}
   await db.prepare(`CREATE TABLE IF NOT EXISTS coach_documents (id TEXT PRIMARY KEY,verification_id TEXT NOT NULL,name TEXT NOT NULL,email TEXT NOT NULL,sport TEXT NOT NULL,team TEXT NOT NULL,document_type TEXT NOT NULL,season TEXT NOT NULL,notes TEXT,filename TEXT NOT NULL,byte_size INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,is_test INTEGER NOT NULL DEFAULT 0,test_expires_at TEXT,reviewed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS coach_access_requests (id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL,organization TEXT NOT NULL,sport TEXT NOT NULL,role TEXT NOT NULL,phone TEXT,team_url TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
 }
 
 async function cleanupExpiredTests(db) {
