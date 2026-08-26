@@ -8,6 +8,18 @@ export async function onRequestGet(context) {
   try {
     await ensureSchema(env.SPORTS_DB);
 
+    // One-time cleanup for the accidental Dark Sky / Travel Soccer test row.
+    await env.SPORTS_DB.prepare(`
+      DELETE FROM coach_submissions
+      WHERE id='d9beed80-2cd5-45e6-b3f9-50c0fd9f7a31'
+         OR (
+           type='Score'
+           AND lower(trim(team))='dark sky'
+           AND lower(trim(opponent))='travel soccer'
+           AND date(event_date)='2026-08-25'
+         )
+    `).run();
+
     // One-time cleanup for the temporary State Champs test submission.
     await env.SPORTS_DB.prepare(`
       DELETE FROM coach_submissions
