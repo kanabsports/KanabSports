@@ -1,10 +1,6 @@
 export async function onRequestGet({ env }) {
   if (!env.SPORTS_DB) return json({ status: 'unavailable', documents: [] }, 503);
   await ensureSchema(env.SPORTS_DB);
-  await env.SPORTS_DB.batch([
-    env.SPORTS_DB.prepare(`DELETE FROM dev_documents WHERE slug=?`).bind('hurricane-football-2026-27'),
-    env.SPORTS_DB.prepare(`DELETE FROM coach_documents WHERE id=?`).bind('hurricane-football-dev-test-2026-27')
-  ]);
   const rows = await env.SPORTS_DB.prepare(`
     SELECT d.slug,d.payload_json,d.updated_at
     FROM dev_documents d
