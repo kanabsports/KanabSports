@@ -1,0 +1,39 @@
+const OWNER_EMAIL='howdy@kanabsports.com';
+
+export async function onRequestGet({request,env}){
+  if(!env.SPORTS_DB)return json({authenticated:false},503);const session=await authenticate(request,env.SPORTS_DB);if(!session)return json({authenticated:false},401);
+  await dataSchema(env.SPORTS_DB);
+  const [access,documents,submissions,recent]=await Promise.all([
+    env.SPORTS_DB.prepare(`SELECT id,name,email,organization,sport,role,created_at FROM coach_access_requests WHERE status='pending' ORDER BY created_at DESC LIMIT 20`).all(),
+    env.SPORTS_DB.prepare(`SELECT id,name,email,team,sport,document_type,season,filename,created_at FROM coach_documents WHERE status='pending' ORDER BY created_at DESC LIMIT 20`).all(),
+    env.SPORTS_DB.prepare(`SELECT id,type,name,email,team,sport,event_date,opponent,result,created_at FROM coach_submissions WHERE status='pending' ORDER BY created_at DESC LIMIT 20`).all(),
+    env.SPORTS_DB.prepare(`SELECT type,team,sport,status,COALESCE(reviewed_at,published_at,created_at) AS activity_at FROM coach_submissions WHERE status!='pending' UNION ALL SELECT document_type AS type,team,sport,status,COALESCE(reviewed_at,created_at) AS activity_at FROM coach_documents WHERE status!='pending' ORDER BY activity_at DESC LIMIT 8`).all()
+  ]);
+  const items=[...(access.results||[]).map(x=>({...x,kind:'coach_access',title:`Coach Access · ${x.name} · ${x.sport}`,detail:`${x.organization} · ${x.role}`})),...(documents.results||[]).map(x=>({...x,kind:'document',title:`${x.document_type} · ${x.team} · ${x.sport}`,detail:`${x.season} · ${x.filename}`})),...(submissions.results||[]).map(x=>({...x,kind:'submission',title:`${x.type} · ${x.team||x.sport||x.name}`,detail:[x.sport,x.event_date,x.opponent,x.result].filter(Boolean).join(' · ')}))].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  const verified=await env.SPORTS_DB.prepare(`SELECT COUNT(*) AS count FROM coach_access_requests WHERE status='approved'`).first(),last=await env.SPORTS_DB.prepare(`SELECT MAX(COALESCE(published_at,reviewed_at,created_at)) AS at FROM coach_submissions WHERE status='approved'`).first();
+  return json({authenticated:true,user:{email:session.email,role:'Owner'},stats:{pending:items.length,verifiedCoaches:Number(verified?.count||0),updatesNeeded:0,lastPublished:last?.at||null},items,recent:recent.results||[],health:{database:true,email:Boolean(env.RESEND_API_KEY),site:true}});
+}
+
+export async function onRequestPost({request,env}){
+  if(!env.SPORTS_DB)return json({success:false,error:'Database unavailable.'},503);const session=await authenticate(request,env.SPORTS_DB);if(!session)return json({success:false,error:'Your admin session has expired.'},401);
+  try{const body=await request.json(),kind=clean(body.kind,40),id=clean(body.id,100),action=clean(body.action,20);if(!id||!['approve','reject'].includes(action)||!['coach_access','document','submission'].includes(kind))return json({success:false,error:'Invalid action.'},400);await dataSchema(env.SPORTS_DB);
+    if(kind==='coach_access'){
+      const row=await env.SPORTS_DB.prepare(`SELECT id,name,email,status FROM coach_access_requests WHERE id=? LIMIT 1`).bind(id).first();if(!row||row.status!=='pending')return json({success:false,error:'This request is no longer pending.'},409);
+      if(action==='approve'){
+        if(!env.RESEND_API_KEY||!env.COACH_ACCESS_CODE)return json({success:false,error:'Coach password email is not configured.'},503);const origin=new URL(request.url).origin,upload=`${origin}/coach-documents.html`;
+        const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`admin-coach-approve-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[row.email],subject:'Your Kanab Sports coach access is approved',text:`Hi ${row.name},\n\nUpload page: ${upload}\nCoach password: ${env.COACH_ACCESS_CODE}`,html:`<div style="font-family:Arial,sans-serif;line-height:1.6"><h2>Your coach access is approved</h2><p>Hi ${esc(row.name)},</p><p><a href="${esc(upload)}">Open coach upload</a></p><p><strong>Coach password:</strong> ${esc(env.COACH_ACCESS_CODE)}</p></div>`})});if(!sent.ok)return json({success:false,error:'The password email could not be sent. Nothing was approved.'},502);
+      }
+      await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET status=?,reviewed_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(action==='approve'?'approved':'rejected',id).run();
+    }else if(kind==='document')await env.SPORTS_DB.prepare(`UPDATE coach_documents SET status=?,reviewed_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(action==='approve'?'approved':'rejected',id).run();
+    else await env.SPORTS_DB.prepare(`UPDATE coach_submissions SET status=?,reviewed_at=datetime('now'),published_at=?,review_token_hash=NULL WHERE id=? AND status='pending'`).bind(action==='approve'?'approved':'rejected',action==='approve'?new Date().toISOString():null,id).run();
+    return json({success:true});
+  }catch(error){console.error('admin action error',error);return json({success:false,error:'The action could not be completed.'},500)}
+}
+
+async function authenticate(request,db){await authSchema(db);const cookie=request.headers.get('Cookie')||'',match=cookie.match(/(?:^|;\s*)ks_admin=([^;]+)/);if(!match)return null;const hash=await sha256(decodeURIComponent(match[1]));return db.prepare(`SELECT email FROM admin_sessions WHERE token_hash=? AND email=? AND datetime(expires_at)>datetime('now') LIMIT 1`).bind(hash,OWNER_EMAIL).first()}
+async function authSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS admin_sessions (id TEXT PRIMARY KEY,email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run()}
+async function dataSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS coach_access_requests (id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL,organization TEXT NOT NULL,sport TEXT NOT NULL,role TEXT NOT NULL,phone TEXT,team_url TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_documents (id TEXT PRIMARY KEY,verification_id TEXT NOT NULL,name TEXT NOT NULL,email TEXT NOT NULL,sport TEXT NOT NULL,team TEXT NOT NULL,document_type TEXT NOT NULL,season TEXT NOT NULL,notes TEXT,filename TEXT NOT NULL,byte_size INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,is_test INTEGER NOT NULL DEFAULT 0,test_expires_at TEXT,reviewed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_submissions (id TEXT PRIMARY KEY,source TEXT NOT NULL,type TEXT NOT NULL,name TEXT,email TEXT,team TEXT,sport TEXT,event_date TEXT,opponent TEXT,result TEXT,link TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,published_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run()}
+async function sha256(v){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));return Array.from(new Uint8Array(h),b=>b.toString(16).padStart(2,'0')).join('')}
+function clean(v,max=500){return String(v||'').replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,max)}
+function esc(v){return String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
+function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
