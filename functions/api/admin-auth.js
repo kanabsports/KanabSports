@@ -1,4 +1,4 @@
-const OWNER_EMAIL='howdy@kanabsports.com',SESSION_SECONDS=14*60*60,PBKDF2_ITERATIONS=210000;
+const OWNER_EMAIL='howdy@kanabsports.com',SESSION_SECONDS=14*60*60,PBKDF2_ITERATIONS=50000;
 
 export async function onRequestGet({request,env}){
   if(!env.SPORTS_DB)return page('Admin sign-in is not connected.',503);

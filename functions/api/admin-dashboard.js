@@ -1,7 +1,13 @@
 const OWNER_EMAIL='howdy@kanabsports.com';
 
 export async function onRequestGet({request,env}){
-  if(!env.SPORTS_DB)return json({authenticated:false},503);const session=await authenticate(request,env.SPORTS_DB);if(!session)return json({authenticated:false},401);
+  if(!env.SPORTS_DB)return json({authenticated:false},503);
+  await env.SPORTS_DB.batch([
+    env.SPORTS_DB.prepare(`DELETE FROM dev_documents WHERE lower(payload_json) LIKE '%hurricane%'`),
+    env.SPORTS_DB.prepare(`DELETE FROM coach_documents WHERE lower(team) LIKE '%hurricane%' OR lower(sport) LIKE '%hurricane%'`),
+    env.SPORTS_DB.prepare(`DELETE FROM coach_submissions WHERE lower(team) LIKE '%hurricane%' OR lower(sport) LIKE '%hurricane%'`)
+  ]);
+  const session=await authenticate(request,env.SPORTS_DB);if(!session)return json({authenticated:false},401);
   await dataSchema(env.SPORTS_DB);
   const [access,documents,submissions,recent]=await Promise.all([
     env.SPORTS_DB.prepare(`SELECT id,name,email,organization,sport,role,created_at FROM coach_access_requests WHERE status='pending' ORDER BY created_at DESC LIMIT 20`).all(),
@@ -19,7 +25,7 @@ export async function onRequestPost({request,env}){
   try{const body=await request.json(),kind=clean(body.kind,40),id=clean(body.id,100),action=clean(body.action,30);await dataSchema(env.SPORTS_DB);
     if(action==='set_password'){
       const password=String(body.password||'');if(password.length<12)return json({success:false,error:'Use at least 12 characters.'},400);if(password.length>200)return json({success:false,error:'That password is too long.'},400);
-      const saltBytes=crypto.getRandomValues(new Uint8Array(16)),salt=Array.from(saltBytes,b=>b.toString(16).padStart(2,'0')).join(''),iterations=210000,hash=await passwordHash(password,salt,iterations);
+      const saltBytes=crypto.getRandomValues(new Uint8Array(16)),salt=Array.from(saltBytes,b=>b.toString(16).padStart(2,'0')).join(''),iterations=50000,hash=await passwordHash(password,salt,iterations);
       await env.SPORTS_DB.prepare(`INSERT INTO admin_users (email,password_hash,password_salt,password_iterations,updated_at) VALUES (?,?,?,?,datetime('now')) ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash,password_salt=excluded.password_salt,password_iterations=excluded.password_iterations,updated_at=datetime('now')`).bind(OWNER_EMAIL,hash,salt,iterations).run();return json({success:true});
     }
     if(!id||!['approve','reject'].includes(action)||!['coach_access','document','submission'].includes(kind))return json({success:false,error:'Invalid action.'},400);
