@@ -2,11 +2,11 @@ export async function onRequestPost({request,env}){
   if(!env.SPORTS_DB)return json({valid:false,error:'Coach access is not configured.'},503);
   try{
     await ensureSchema(env.SPORTS_DB);
-    const body=await request.json(),code=String(body?.code||'').trim().toUpperCase();
+    const body=await request.json(),code=String(body?.code||body?.credential||'').trim().toUpperCase();
     if(!code)return json({valid:false});
-    const hash=await sha256(code),coach=await env.SPORTS_DB.prepare(`SELECT name,email,sport,organization FROM coach_access_requests WHERE status='approved' AND access_code_hash=? LIMIT 1`).bind(hash).first();
+    const hash=await sha256(code),coach=await env.SPORTS_DB.prepare(`SELECT name,email,phone,sport,organization FROM coach_access_requests WHERE status='approved' AND access_code_hash=? LIMIT 1`).bind(hash).first();
     if(!coach)return json({valid:false});
-    return json({valid:true,coach:{name:coach.name||'',email:coach.email||'',sport:coach.sport||'',team:coach.organization||''}});
+    return json({valid:true,coach:{name:coach.name||'',email:coach.email||'',phone:coach.phone||'',sport:coach.sport||'',team:coach.organization||''}});
   }catch(error){console.error('coach access error',error);return json({valid:false,error:'Could not verify coach access.'},500)}
 }
 export function onRequestGet(){return json({valid:false},405)}
