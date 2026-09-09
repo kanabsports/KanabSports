@@ -7,7 +7,7 @@ export async function onRequestGet({request,env}){
     for(const r of rows.results||[]){
       const key=slug(r.sport)+'|'+slug(r.team);if(map.has(key))continue;
       const notes=String(r.notes||''),schedule=matchUrl(notes,'MaxPreps schedule:'),roster=matchUrl(notes,'MaxPreps roster:');
-      map.set(key,{id:r.id,key:slug(r.sport),teamKey:slug(r.team),name:r.team||r.sport,team:r.team||'',sport:r.sport||'',season:r.season||'',documentType:r.document_type||'',notes:stripSourceLines(notes),scheduleUrl:schedule,rosterUrl:roster,hasPdf:Number(r.byte_size||0)>0,updatedAt:r.reviewed_at||r.created_at||null});
+      map.set(key,{id:r.id,key:slug(r.sport),teamKey:slug(r.team),name:r.sport||r.team,team:r.team||'',sport:r.sport||'',season:r.season||'',documentType:r.document_type||'',notes:stripSourceLines(notes),scheduleUrl:schedule,rosterUrl:roster,hasPdf:Number(r.byte_size||0)>0,updatedAt:r.reviewed_at||r.created_at||null});
     }
     return json({teams:[...map.values()]});
   }catch(error){console.error('public teams error',error);return json({teams:[]},200)}
