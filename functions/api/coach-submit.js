@@ -1,0 +1,31 @@
+const ADMIN_EMAIL='howdy@kanabsports.com';
+export async function onRequestPost({request,env}){
+  if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({success:false,error:'Coach submissions are not configured yet.'},503);
+  try{
+    const form=await request.formData();
+    const clean=(v,m=1500)=>String(v||'').replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,m);
+    const coachCode=clean(form.get('coach_code'),100).toUpperCase();if(!coachCode)return json({success:false,error:'Enter your coach access code.'},400);
+    await ensureSchema(env.SPORTS_DB);
+    const codeHash=await sha256(coachCode),coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,phone,sport,organization FROM coach_access_requests WHERE status='approved' AND access_code_hash=? LIMIT 1`).bind(codeHash).first();
+    if(!coach)return json({success:false,error:'That coach access code is not valid.'},403);
+    const type=clean(form.get('type'),80)||'Score',sport=clean(coach.sport,120),team=clean(coach.organization,180),name=clean(coach.name,120),email=clean(coach.email,180),phone=clean(coach.phone,80),date=clean(form.get('date'),40),opponent=clean(form.get('opponent'),180),result=clean(form.get('result'),180),link=clean(form.get('link'),700),message=clean(form.get('message'),3000);
+    if(!message)return json({success:false,error:'Add a few details before sending.'},400);
+    const champ=type==='Score'&&String(form.get('championship')||'').toLowerCase()==='yes',stored=champ?'[[STATE_CHAMPION]]\n'+message:message;
+    const id=crypto.randomUUID(),token=randomToken(),hash=await sha256Exact(token),expires=new Date(Date.now()+7*86400000).toISOString();
+    await env.SPORTS_DB.prepare(`INSERT INTO coach_submissions (id,source,type,name,email,team,sport,event_date,opponent,result,link,message,status,review_token_hash,review_expires_at,created_at) VALUES (?,'Coaches',?,?,?,?,?,?,?,?,?,?,'pending',?,?,datetime('now'))`).bind(id,type,name,email,team,sport,date,opponent,result,link,stored,hash,expires).run();
+    const origin=new URL(request.url).origin,approve=`${origin}/review?token=${encodeURIComponent(token)}&action=approve`,reject=`${origin}/review?token=${encodeURIComponent(token)}&action=reject`;
+    const rows=[['Submission',type],['Coach',name],['Email',email],['Phone',phone],['Team',team],['Sport',sport],['Date',date],['Opponent / Event',opponent],['Score / Result',result],['Link',link]].filter(([,v])=>v);
+    const text=`Coach submission\n\n${rows.map(([l,v])=>`${l}: ${v}`).join('\n')}\n\n${message}\n\nApprove: ${approve}\nDeny: ${reject}`;
+    const htmlRows=rows.map(([l,v])=>`<tr><td style="padding:6px 14px 6px 0;font-weight:700">${esc(l)}</td><td>${esc(v)}</td></tr>`).join('');
+    const html=`<div style="font-family:Arial,sans-serif;line-height:1.55;max-width:680px"><div style="font-size:12px;font-weight:800;color:#a51420;text-transform:uppercase">Coach submission</div><h2>${esc(team)} · ${esc(type)}</h2><table style="border-collapse:collapse">${htmlRows}</table><div style="margin:18px 0;padding:14px;background:#f5f5f5;border-radius:8px">${esc(message)}</div><a href="${esc(approve)}" style="display:block;background:#16833a;color:#fff;text-decoration:none;text-align:center;font-size:20px;font-weight:800;padding:18px;border-radius:10px">✓ Approve & Publish</a><div style="text-align:center;margin-top:22px"><a href="${esc(reject)}" style="color:#9d2028;font-weight:700">Deny submission</a></div></div>`;
+    const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`coach-submit-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[ADMIN_EMAIL],reply_to:email,subject:`Coach submission — ${type} — ${sport}`,text,html})});
+    if(!sent.ok){await env.SPORTS_DB.prepare(`DELETE FROM coach_submissions WHERE id=?`).bind(id).run();return json({success:false,error:'The submission email could not be delivered. Please try again.'},502)}
+    return json({success:true,message:'Submitted. Kanab Sports received it for approval.'});
+  }catch(error){console.error('coach submit error',error);return json({success:false,error:'Something went wrong. Please try again.'},500)}
+}
+async function ensureSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS coach_access_requests (id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL,organization TEXT NOT NULL,sport TEXT NOT NULL,role TEXT NOT NULL,phone TEXT,team_url TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();try{await db.prepare(`ALTER TABLE coach_access_requests ADD COLUMN access_code_hash TEXT`).run()}catch{}await db.prepare(`CREATE TABLE IF NOT EXISTS coach_submissions (id TEXT PRIMARY KEY,source TEXT NOT NULL,type TEXT NOT NULL,name TEXT,email TEXT,team TEXT,sport TEXT,event_date TEXT,opponent TEXT,result TEXT,link TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,published_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run()}
+function randomToken(){const b=crypto.getRandomValues(new Uint8Array(24));return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}
+async function sha256(v){return sha256Exact(String(v).trim().toUpperCase())}
+async function sha256Exact(v){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(v)));return Array.from(new Uint8Array(h),b=>b.toString(16).padStart(2,'0')).join('')}
+function esc(v){return String(v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
+function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
