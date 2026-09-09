@@ -1,9 +1,9 @@
 const OWNER='howdy@kanabsports.com';
 
 export async function onRequestPost({request,env}){
-  if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({success:false,error:'The contributor service is unavailable.'},503);
+  if(!env.SPORTS_DB||!env.RESEND_API_KEY||!env.TURNSTILE_SECRET_KEY)return json({success:false,error:'The contributor service is unavailable.'},503);
   try{
-    if(!await authenticate(request,env.SPORTS_DB))return json({success:false,error:'Your 24-hour session has expired.'},401);
+    if(!await authenticate(request,env.TURNSTILE_SECRET_KEY))return json({success:false,error:'Your 24-hour session has expired.'},401);
     const form=await request.formData();
     if(clean(form.get('website'),100))return json({success:true,message:'Received.'});
     const section=clean(form.get('section'),40),requestType=clean(form.get('request_type'),40),headline=clean(form.get('headline'),140),
@@ -68,12 +68,7 @@ async function publishAnnouncement(db,id,title,detail,eventDate,endDate,href,spo
   await db.prepare(`INSERT INTO site_announcements (id,source,sender_email,message_id,original_subject,original_body,title,detail,sport,event_date,end_date,href,featured,status,published_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,'approved',datetime('now'),datetime('now'))`)
     .bind(id,'sterling_portal','sglover@kanab.utah.gov',`sterling-portal-${id}`,title,detail,title,detail,sport,eventDate,endDate,href).run();
 }
-async function authenticate(request,db){
-  await db.prepare(`CREATE TABLE IF NOT EXISTS sterling_sessions (id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
-  const cookie=request.headers.get('Cookie')||'',match=cookie.match(/(?:^|;\s*)ks_sterling=([^;]+)/);if(!match)return null;
-  const hash=await sha256(decodeURIComponent(match[1]));
-  return db.prepare(`SELECT id FROM sterling_sessions WHERE token_hash=? AND datetime(expires_at)>datetime('now') LIMIT 1`).bind(hash).first();
-}
+async function authenticate(request,secret){const cookie=request.headers.get('Cookie')||'',match=cookie.match(/(?:^|;\s*)ks_sterling=([^;]+)/);if(!match)return false;try{const token=decodeURIComponent(match[1]),[payload,signature]=token.split('.');if(!payload||!signature)return false;const expected=await hmac(secret,payload);if(!constantTimeEqual(signature,expected))return false;const data=JSON.parse(new TextDecoder().decode(fromBase64Url(payload)));return Number(data.exp)>Date.now()}catch{return false}}
 async function schema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS sterling_submissions (id TEXT PRIMARY KEY,section TEXT NOT NULL,request_type TEXT NOT NULL,headline TEXT NOT NULL,event_date TEXT,end_date TEXT,time_text TEXT,location TEXT,details TEXT NOT NULL,filename TEXT,byte_size INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run()}
 async function calendarSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS rec_calendars (id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,title TEXT NOT NULL,details TEXT NOT NULL,source_filename TEXT,status TEXT NOT NULL DEFAULT 'approved',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run()}
 async function announcementSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS site_announcements (id TEXT PRIMARY KEY,source TEXT NOT NULL,sender_email TEXT NOT NULL,message_id TEXT UNIQUE,original_subject TEXT,original_body TEXT,title TEXT NOT NULL,detail TEXT NOT NULL,sport TEXT,event_date TEXT,end_date TEXT,href TEXT,featured INTEGER NOT NULL DEFAULT 1,status TEXT NOT NULL DEFAULT 'pending',review_token_hash TEXT,review_expires_at TEXT,reviewed_at TEXT,published_at TEXT,removed_at TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run()}
@@ -84,7 +79,10 @@ function date(v){const s=String(v||'').trim();return /^20\d{2}-\d{2}-\d{2}$/.tes
 function formatDate(v){return new Date(v+'T12:00:00Z').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric',timeZone:'UTC'})}
 function safeFilename(v){const s=String(v||'file').replace(/[^a-zA-Z0-9._ -]/g,'_').replace(/\s+/g,' ').trim().slice(0,120);return s||'upload'}
 function toBase64(bytes){let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(binary)}
-async function sha256(v){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));return Array.from(new Uint8Array(h),b=>b.toString(16).padStart(2,'0')).join('')}
+async function hmac(secret,value){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']),bytes=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(value));return toBase64Url(new Uint8Array(bytes))}
+function toBase64Url(bytes){let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'')}
+function fromBase64Url(value){const s=value.replaceAll('-','+').replaceAll('_','/'),padded=s+'='.repeat((4-s.length%4)%4),raw=atob(padded);return Uint8Array.from(raw,c=>c.charCodeAt(0))}
+function constantTimeEqual(a,b){if(a.length!==b.length)return false;let n=0;for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i);return n===0}
 function clean(v,max=500){return String(v||'').replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,max)}
 function esc(v){return String(v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
