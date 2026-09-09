@@ -11,8 +11,8 @@ export async function onRequestPost({request,env}){
     if(!name||!validEmail(email)||!sport||!team||!season)return json({success:false,error:'Please complete the coach, email, sport, team, and season.'},400);
     const scheduleUrl=cleanMaxPrepsUrl(form.get('schedule_url')),rosterUrl=cleanMaxPrepsUrl(form.get('roster_url'));
     if((form.get('schedule_url')&&!scheduleUrl)||(form.get('roster_url')&&!rosterUrl))return json({success:false,error:'MaxPreps links must be complete maxpreps.com URLs.'},400);
-    const file=form.get('pdf'),hasFile=Boolean(file&&typeof file.arrayBuffer==='function'&&file.name);if(!hasFile&&!scheduleUrl&&!rosterUrl)return json({success:false,error:'Add at least one MaxPreps link or attach a PDF.'},400);
-    let bytes=new Uint8Array(),filename='MaxPreps links';
+    const file=form.get('pdf'),hasFile=Boolean(file&&typeof file.arrayBuffer==='function'&&file.name);
+    let bytes=new Uint8Array(),filename='No PDF attached';
     if(hasFile){if(file.size<5||file.size>MAX_PDF_BYTES)return json({success:false,error:'The PDF must be 5 MB or smaller.'},413);if(file.type&&file.type!=='application/pdf')return json({success:false,error:'Only PDF files are accepted.'},415);bytes=new Uint8Array(await file.arrayBuffer());if(String.fromCharCode(...bytes.subarray(0,5))!=='%PDF-')return json({success:false,error:'That file does not appear to be a valid PDF.'},415);filename=safeFilename(file.name)}
     const id=crypto.randomUUID(),reviewToken=randomToken(),reviewHash=await sha256(reviewToken),reviewExpires=new Date(Date.now()+7*86400000).toISOString(),sourceNotes=[notes,scheduleUrl?`MaxPreps schedule: ${scheduleUrl}`:'',rosterUrl?`MaxPreps roster: ${rosterUrl}`:''].filter(Boolean).join('\n');
     await env.SPORTS_DB.prepare(`INSERT INTO coach_documents (id,verification_id,name,email,sport,team,document_type,season,notes,filename,byte_size,status,review_token_hash,review_expires_at,is_test,test_expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,0,NULL,datetime('now'))`).bind(id,approved.id,name,email,sport,team,documentType,season,sourceNotes,filename,bytes.byteLength,reviewHash,reviewExpires).run();
