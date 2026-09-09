@@ -5,7 +5,7 @@ export async function onRequestPost({request,env}){
     const form=await request.formData();if(clean(form.get('website'),100))return json({success:true,message:'Submitted.'});
     await ensureSchema(env.SPORTS_DB);
     const coachCode=clean(form.get('coach_code'),100).toUpperCase();if(!coachCode)return json({success:false,error:'Enter your coach access code.'},400);
-    const codeHash=await sha256(coachCode),approved=await env.SPORTS_DB.prepare(`SELECT id,name,email,sport,organization FROM coach_access_requests WHERE status='approved' AND access_code_hash=? LIMIT 1`).bind(codeHash).first();
+    const codeHash=await sha256Code(coachCode),approved=await env.SPORTS_DB.prepare(`SELECT id,name,email,sport,organization FROM coach_access_requests WHERE status='approved' AND access_code_hash=? LIMIT 1`).bind(codeHash).first();
     if(!approved)return json({success:false,error:'That coach access code is not valid.'},403);
     const name=clean(form.get('name'),120),email=clean(form.get('email'),180).toLowerCase(),sport=clean(form.get('sport'),120),team=clean(form.get('team'),180),season=clean(form.get('season'),100),documentType=clean(form.get('document_type'),80)||'Roster and schedule',notes=clean(form.get('notes'),1500);
     if(!name||!validEmail(email)||!sport||!team||!season)return json({success:false,error:'Please complete the coach, email, sport, team, and season.'},400);
@@ -14,7 +14,7 @@ export async function onRequestPost({request,env}){
     const file=form.get('pdf'),hasFile=Boolean(file&&typeof file.arrayBuffer==='function'&&file.name);
     let bytes=new Uint8Array(),filename='No PDF attached';
     if(hasFile){if(file.size<5||file.size>MAX_PDF_BYTES)return json({success:false,error:'The PDF must be 5 MB or smaller.'},413);if(file.type&&file.type!=='application/pdf')return json({success:false,error:'Only PDF files are accepted.'},415);bytes=new Uint8Array(await file.arrayBuffer());if(String.fromCharCode(...bytes.subarray(0,5))!=='%PDF-')return json({success:false,error:'That file does not appear to be a valid PDF.'},415);filename=safeFilename(file.name)}
-    const id=crypto.randomUUID(),reviewToken=randomToken(),reviewHash=await sha256(reviewToken),reviewExpires=new Date(Date.now()+7*86400000).toISOString(),sourceNotes=[notes,scheduleUrl?`MaxPreps schedule: ${scheduleUrl}`:'',rosterUrl?`MaxPreps roster: ${rosterUrl}`:''].filter(Boolean).join('\n');
+    const id=crypto.randomUUID(),reviewToken=randomToken(),reviewHash=await sha256Exact(reviewToken),reviewExpires=new Date(Date.now()+7*86400000).toISOString(),sourceNotes=[notes,scheduleUrl?`MaxPreps schedule: ${scheduleUrl}`:'',rosterUrl?`MaxPreps roster: ${rosterUrl}`:''].filter(Boolean).join('\n');
     await env.SPORTS_DB.prepare(`INSERT INTO coach_documents (id,verification_id,name,email,sport,team,document_type,season,notes,filename,byte_size,status,review_token_hash,review_expires_at,is_test,test_expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,0,NULL,datetime('now'))`).bind(id,approved.id,name,email,sport,team,documentType,season,sourceNotes,filename,bytes.byteLength,reviewHash,reviewExpires).run();
     const origin=new URL(request.url).origin,approve=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=approve`,reject=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=reject`,rows=[['Coach',name],['Email',email],['Sport',sport],['Team',team],['Season',season],['Information',documentType],['PDF',hasFile?filename:'Not attached'],['MaxPreps schedule',scheduleUrl],['MaxPreps roster',rosterUrl]].filter(([,v])=>v);
     const text=`Coach submission received.\n\n${rows.map(([l,v])=>`${l}: ${v}`).join('\n')}${notes?`\n\nNotes: ${notes}`:''}\n\nApprove: ${approve}\nDeny: ${reject}`;
@@ -31,7 +31,8 @@ function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
 function cleanMaxPrepsUrl(v){const raw=clean(v,900);if(!raw)return'';try{const u=new URL(raw);return u.protocol==='https:'&&/(^|\.)maxpreps\.com$/i.test(u.hostname)?u.href:''}catch{return''}}
 function safeFilename(v){const s=String(v||'file.pdf').replace(/[^a-zA-Z0-9._ -]/g,'_').replace(/\s+/g,' ').trim().slice(0,120);return s||'upload.pdf'}
 function randomToken(){const b=crypto.getRandomValues(new Uint8Array(24));return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}
-async function sha256(v){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(v).trim().toUpperCase()));return Array.from(new Uint8Array(h),b=>b.toString(16).padStart(2,'0')).join('')}
+async function sha256Exact(v){const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(v)));return Array.from(new Uint8Array(h),b=>b.toString(16).padStart(2,'0')).join('')}
+async function sha256Code(v){return sha256Exact(String(v).trim().toUpperCase())}
 function toBase64(bytes){let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(binary)}
 function esc(v){return String(v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
