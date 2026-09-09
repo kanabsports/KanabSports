@@ -58,6 +58,13 @@ export async function onRequestPost({request,env}){
 
 async function publishAnnouncement(db,id,title,detail,eventDate,endDate,href,sport){
   await announcementSchema(db);
+  if(sport==='Rec Sports'){
+    const existing=await db.prepare(`SELECT id FROM site_announcements WHERE source='sterling_portal' AND href=? AND status='approved' LIMIT 1`).bind(href).first();
+    if(existing){
+      await db.prepare(`UPDATE site_announcements SET original_subject=?,original_body=?,title=?,detail=?,sport=?,event_date=?,end_date=?,published_at=datetime('now'),removed_at=NULL WHERE id=?`).bind(title,detail,title,detail,sport,eventDate,endDate,existing.id).run();
+      return;
+    }
+  }
   await db.prepare(`INSERT INTO site_announcements (id,source,sender_email,message_id,original_subject,original_body,title,detail,sport,event_date,end_date,href,featured,status,published_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,'approved',datetime('now'),datetime('now'))`)
     .bind(id,'sterling_portal','sglover@kanab.utah.gov',`sterling-portal-${id}`,title,detail,title,detail,sport,eventDate,endDate,href).run();
 }
