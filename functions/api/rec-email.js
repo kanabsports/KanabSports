@@ -5,18 +5,19 @@ const TRUSTED_PERSONAL='gloversterling@gmail.com';
 export async function onRequestPost({request,env}){
   if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({ok:false,error:'Update service is not configured.'},503);
   try{
-    const raw=await request.text();
+    const raw=await request.text(),url=new URL(request.url),input=JSON.parse(raw);
     let sender='',subject='',body='',messageId='',source='secure webhook';
-    if(request.headers.get('svix-id')){
-      if(!env.RESEND_WEBHOOK_SECRET||!await verifyResend(raw,request.headers,env.RESEND_WEBHOOK_SECRET))return json({ok:false,error:'Invalid webhook signature.'},401);
-      const event=JSON.parse(raw);if(event.type!=='email.received')return json({ok:true,ignored:true});
-      const emailId=clean(event.data?.email_id,100);if(!emailId)return json({ok:false,error:'Email ID missing.'},400);
+    const signed=request.headers.get('svix-id')&&env.RESEND_WEBHOOK_SECRET&&await verifyResend(raw,request.headers,env.RESEND_WEBHOOK_SECRET);
+    const keyed=env.REC_UPDATE_WEBHOOK_SECRET&&constantEqual(url.searchParams.get('key')||'',env.REC_UPDATE_WEBHOOK_SECRET);
+    if(input.type==='email.received'){
+      if(!signed&&!keyed)return json({ok:false,error:'Invalid webhook signature.'},401);
+      const event=input,emailId=clean(event.data?.email_id,100);if(!emailId)return json({ok:false,error:'Email ID missing.'},400);
       const received=await fetch(`https://api.resend.com/emails/receiving/${encodeURIComponent(emailId)}?html_format=cid`,{headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`}});
       if(!received.ok)return json({ok:false,error:'Unable to retrieve received email.'},502);
       const email=await received.json();sender=address(email.from||event.data?.from);subject=clean(email.subject||event.data?.subject,300);body=clean(email.text||stripHtml(email.html||''),6000);messageId=clean(email.message_id||event.data?.message_id||emailId,300);source='Resend inbound';
     }else{
       const auth=request.headers.get('Authorization')||'';if(!env.REC_UPDATE_WEBHOOK_SECRET||!constantEqual(auth,`Bearer ${env.REC_UPDATE_WEBHOOK_SECRET}`))return json({ok:false,error:'Unauthorized.'},401);
-      const input=JSON.parse(raw);sender=address(input.sender);subject=clean(input.subject,300);body=clean(input.text||input.body,6000);messageId=clean(input.message_id||input.id||crypto.randomUUID(),300);source='mail automation';
+      sender=address(input.sender);subject=clean(input.subject,300);body=clean(input.text||input.body,6000);messageId=clean(input.message_id||input.id||crypto.randomUUID(),300);source='mail automation';
     }
     if(![TRUSTED_WORK,TRUSTED_PERSONAL].includes(sender))return json({ok:true,ignored:true});
     await schema(env.SPORTS_DB);
