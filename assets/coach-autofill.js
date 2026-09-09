@@ -22,12 +22,14 @@
     code.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(run,350)});code.addEventListener('blur',run);
     session().then(d=>{if(d.valid){signedIn=true;verified=true;fill(form,d.coach||{});code.required=false;code.closest('.field').style.display='none';status.textContent='✓ Signed in — your saved details are filled in.'}});
     if(form.id==='coachForm'){
+      const type=field('type',form),publicPhone=document.createElement('div');publicPhone.className='field full';publicPhone.style.cssText='border:1px solid #343740;background:#15171b;border-radius:12px;padding:14px 16px';publicPhone.innerHTML='<label style="display:flex;align-items:center;gap:12px;color:#fff;font-size:13px;text-transform:none"><input type="checkbox" name="publish_phone" value="yes" style="width:20px;height:20px;accent-color:#e32636"><span><strong style="display:block;font-size:14px">Show my phone number publicly</strong><small style="display:block;color:#9da0a7;font-size:12px;margin-top:3px;font-weight:500">Use this when parents should text or call you to register or ask team questions.</small></span></label>';
+      const message=field('message',form)?.closest('.field');message?.before(publicPhone);const syncPhone=()=>{publicPhone.style.display=(type?.value==='Team')?'flex':'none'};type?.addEventListener('change',syncPhone);document.querySelectorAll('.action[data-type]').forEach(x=>x.addEventListener('click',()=>setTimeout(syncPhone,0)));syncPhone();
       form.addEventListener('submit',async e=>{
         e.preventDefault();e.stopImmediatePropagation();
         const ok=verified||signedIn||await run();if(!ok)return;
         const submitButton=document.getElementById('submitButton'),mainStatus=document.getElementById('coachStatus'),success=document.getElementById('coachSuccess');
         if(submitButton)submitButton.disabled=true;if(mainStatus)mainStatus.textContent='Sending…';success?.classList.remove('show');
-        try{const r=await fetch('/api/coach-submit',{method:'POST',body:new FormData(form)}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.error||'Unable to submit.');if(mainStatus)mainStatus.textContent='';success?.classList.add('show');const keepType=field('type',form)?.value;form.reset();if(typeof window.setType==='function'&&keepType)window.setType(keepType);}
+        try{const r=await fetch('/api/coach-submit',{method:'POST',body:new FormData(form)}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.error||'Unable to submit.');if(mainStatus)mainStatus.textContent='';success?.classList.add('show');const keepType=field('type',form)?.value;form.reset();if(typeof window.setType==='function'&&keepType)window.setType(keepType);syncPhone();}
         catch(err){if(mainStatus)mainStatus.textContent=err.message||'Something went wrong. Please try again.'}
         finally{if(submitButton)submitButton.disabled=false;if(window.turnstile)try{window.turnstile.reset()}catch{}}
       },true)
