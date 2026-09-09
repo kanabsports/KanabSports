@@ -1,9 +1,9 @@
 const OWNER='howdy@kanabsports.com';
 
 export async function onRequestPost({request,env}){
-  if(!env.SPORTS_DB||!env.RESEND_API_KEY||!env.TURNSTILE_SECRET_KEY)return json({success:false,error:'The contributor service is unavailable.'},503);
+  if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({success:false,error:'The contributor service is unavailable.'},503);
   try{
-    if(!await authenticate(request,env.TURNSTILE_SECRET_KEY))return json({success:false,error:'Your 24-hour session has expired.'},401);
+    if(!await authenticate(request,env.RESEND_API_KEY))return json({success:false,error:'Your 24-hour session has expired.'},401);
     const form=await request.formData();
     if(clean(form.get('website'),100))return json({success:true,message:'Received.'});
     const section=clean(form.get('section'),40),requestType=clean(form.get('request_type'),40),headline=clean(form.get('headline'),140),
