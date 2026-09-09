@@ -1,0 +1,37 @@
+const COOKIE='ks_coach';
+export async function onRequestPost({request,env}){
+  if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({success:false,error:'Coach accounts are not configured yet.'},503);
+  try{
+    await schema(env.SPORTS_DB);const body=await request.json(),action=clean(body.action,40),email=clean(body.email,180).toLowerCase();
+    if(action==='request_otp'){
+      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();
+      if(!coach)return json({success:true,message:'If that approved coach email exists, a code was sent.'});
+      const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0'),hash=await sha256(code),expires=new Date(Date.now()+10*60000).toISOString(),id=crypto.randomUUID();
+      await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=?`).bind(coach.id).run();
+      await env.SPORTS_DB.prepare(`INSERT INTO coach_login_otps (id,coach_id,code_hash,expires_at,created_at) VALUES (?,?,?,?,datetime('now'))`).bind(id,coach.id,hash,expires).run();
+      const text=`Hi ${coach.name},\n\nYour Kanab Sports verification code is ${code}.\n\nIt expires in 10 minutes.`;
+      const html=`<div style="font-family:Arial,sans-serif;line-height:1.6;max-width:600px"><div style="font-size:12px;font-weight:800;color:#a51420;text-transform:uppercase">Kanab Sports</div><h2>Coach verification code</h2><p>Hi ${esc(coach.name)},</p><div style="font-size:30px;font-weight:800;letter-spacing:5px;padding:16px;background:#f3f3f3;border-radius:10px;text-align:center">${code}</div><p>This code expires in 10 minutes.</p></div>`;
+      await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`coach-otp-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[coach.email],reply_to:'howdy@kanabsports.com',subject:'Your Kanab Sports verification code',text,html})});
+      return json({success:true,message:'Check your email for the 6-digit code.'});
+    }
+    if(action==='set_password'){
+      const otp=clean(body.otp,12),password=String(body.password||'');if(password.length<10)return json({success:false,error:'Use at least 10 characters.'},400);
+      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return json({success:false,error:'Approved coach account not found.'},404);
+      const codeHash=await sha256(otp),row=await env.SPORTS_DB.prepare(`SELECT id FROM coach_login_otps WHERE coach_id=? AND code_hash=? AND datetime(expires_at)>datetime('now') LIMIT 1`).bind(coach.id,codeHash).first();if(!row)return json({success:false,error:'That verification code is invalid or expired.'},403);
+      const salt=randomHex(16),iterations=60000,hash=await passwordHash(password,salt,iterations);await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET password_hash=?,password_salt=?,password_iterations=? WHERE id=?`).bind(hash,salt,iterations,coach.id).run();await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=?`).bind(coach.id).run();
+      return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Password saved. You are signed in.'});
+    }
+    if(action==='login'){
+      const password=String(body.password||''),coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash,password_salt,password_iterations FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach||!coach.password_hash)return json({success:false,error:'No coach password is set for that email.'},403);
+      const hash=await passwordHash(password,coach.password_salt,Number(coach.password_iterations||60000));if(!constant(hash,coach.password_hash))return json({success:false,error:'Email or password is incorrect.'},403);
+      return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Signed in.'});
+    }
+    if(action==='logout'){const token=cookie(request,COOKIE);if(token)await env.SPORTS_DB.prepare(`DELETE FROM coach_sessions WHERE token_hash=?`).bind(await sha256(token)).run();const r=json({success:true});r.headers.append('Set-Cookie',`${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);return r}
+    return json({success:false,error:'Invalid action.'},400);
+  }catch(error){console.error('coach account error',error);return json({success:false,error:'Something went wrong.'},500)}
+}
+async function makeSession(db,coachId,email,data){const token=randomHex(32),hash=await sha256(token),id=crypto.randomUUID(),expires=new Date(Date.now()+30*86400000).toISOString();await db.prepare(`INSERT INTO coach_sessions (id,coach_id,email,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,datetime('now'))`).bind(id,coachId,email,hash,expires).run();const r=json(data);r.headers.append('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30*86400}`);return r}
+async function schema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS coach_login_otps (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,code_hash TEXT NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_sessions (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();for(const q of [`ALTER TABLE coach_access_requests ADD COLUMN password_hash TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_salt TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_iterations INTEGER`])try{await db.prepare(q).run()}catch{}}
+async function passwordHash(password,saltHex,iterations){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']),salt=new Uint8Array(saltHex.match(/.{2}/g).map(x=>parseInt(x,16))),bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations},key,256);return hex(new Uint8Array(bits))}
+async function sha256(v){return hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(v))))) }
+function randomHex(n){return hex(crypto.getRandomValues(new Uint8Array(n)))}function hex(b){return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}function constant(a,b){if(a.length!==b.length)return false;let x=0;for(let i=0;i<a.length;i++)x|=a.charCodeAt(i)^b.charCodeAt(i);return x===0}function cookie(r,n){const m=(r.headers.get('Cookie')||'').match(new RegExp('(?:^|;\\s*)'+n+'=([^;]+)'));return m?decodeURIComponent(m[1]):''}function clean(v,m=500){return String(v||'').trim().slice(0,m)}function esc(v){return String(v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
