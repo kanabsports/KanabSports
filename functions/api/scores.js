@@ -43,15 +43,18 @@ export async function onRequestGet(context) {
     const rows = query.results || [];
     const scores = rows.map(row => normalizeScore(row)).filter(Boolean);
 
-    const championRow = rows
-      .filter(row => /\[\[STATE_CHAMPION\]\]/i.test(String(row.message || '')) || /\bstate\s+champs?\b/i.test(String(row.message || '')))
+    const latestWinRow = rows
+      .filter(row => {
+        const parsed = parseScores(row.result || '');
+        return parsed && parsed.teamScore > parsed.opponentScore;
+      })
       .filter(row => {
         const published = Date.parse(String(row.published_at || row.created_at || ''));
-        return Number.isFinite(published) && (Date.now() - published) <= 24 * 60 * 60 * 1000;
+        return Number.isFinite(published) && (Date.now() - published) <= 72 * 60 * 60 * 1000;
       })
       .sort((a, b) => Date.parse(String(b.published_at || b.created_at || '')) - Date.parse(String(a.published_at || a.created_at || '')))[0];
 
-    const celebration = championRow ? normalizeCelebration(championRow) : null;
+    const celebration = latestWinRow ? normalizeCelebration(latestWinRow) : null;
     return json({ scores, celebration });
   } catch (error) {
     console.error('Scores API error', error);
@@ -76,6 +79,10 @@ function normalizeScore(row) {
 
 function normalizeCelebration(row) {
   const parsed = parseScores(row.result || '');
+  const note = String(row.message || '');
+  const level = /\\[\\[STATE_CHAMPION\\]\\]|\\bstate\\s+champs?\\b/i.test(note)
+    ? 'state'
+    : /\\bhomecoming\\b/i.test(note) ? 'homecoming' : 'win';
   return {
     id: row.id,
     sport: row.sport || 'Sport',
@@ -83,6 +90,8 @@ function normalizeCelebration(row) {
     opponent: row.opponent || '',
     teamScore: parsed?.teamScore ?? null,
     opponentScore: parsed?.opponentScore ?? null,
+    level,
+    sourceUrl: row.link || '',
     publishedAt: row.published_at || row.created_at || '',
   };
 }
