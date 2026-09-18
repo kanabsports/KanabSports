@@ -1,13 +1,13 @@
 {
-  "id": "football-2026-09-11-north-summit",
+  "id": "football-2026-09-17-beaver",
   "sport": "Football",
   "team": "Cowboys",
-  "opponent": "North Summit",
-  "teamScore": 29,
-  "opponentScore": 24,
-  "date": "2026-09-11",
-  "publishedAt": "2026-09-12T08:27:50Z",
+  "opponent": "Beaver",
+  "teamScore": 14,
+  "opponentScore": 7,
+  "date": "2026-09-17",
+  "publishedAt": "2026-09-18T19:08:00-06:00",
   "level": "win",
-  "maxprepsUrl": "https://www.maxpreps.com/ut/football/game/kanab-vs-north-summit-coalville/9-11-2026/?c=7dad2206-0c2b-4e45-8a11-7b6b09715239",
+  "maxprepsUrl": "https://www.maxpreps.com/ut/kanab/kanab-cowboys/football/schedule/",
   "hudlUrl": "https://fan.hudl.com/usa/ut/kanab/organization/15658/kanab-high-school"
 }
