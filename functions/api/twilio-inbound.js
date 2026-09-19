@@ -29,7 +29,10 @@ export async function onRequestPost({request,env}){
  if(row.step==='player'){
    const match=matchPlayer(body);
    await env.SPORTS_DB.prepare("UPDATE sms_enrollment SET player_name=?,player_match=?,match_status=?,step='complete',completed_at=datetime('now'),updated_at=datetime('now') WHERE phone=? AND team=?").bind(body,match||null,match?'matched':'needs_review',from,TEAM).run();
-   if(match)return xml('You’re all set! Kanab Sports — Coach Britt soccer team texts are active for '+match+'. Recurring team updates; message frequency varies. Message & data rates may apply. Reply HELP for help or STOP to opt out.');
+   if(match){
+   await syncRosterContact(env.SPORTS_DB,match,row.guardian_name,from);
+   return xml('You’re all set! Kanab Sports — Coach Britt soccer team texts are active for '+match+'. Recurring team updates; message frequency varies. Message & data rates may apply. Reply HELP for help or STOP to opt out.');
+ }
    return xml("You're enrolled in Kanab Sports — Coach Britt soccer team texts. We couldn't automatically match that player name to the roster, so Coach Britt or Coach Jodi will review it. Message frequency varies. Message & data rates may apply. Reply HELP for help or STOP to opt out.");
  }
  return xml('Kanab Sports: Your team-text enrollment is active. Reply HELP for help or STOP to opt out.');
@@ -40,6 +43,11 @@ export async function onRequestGet({request,env}){
  if(!phone)return json({success:false,error:'phone required'},400);
  await schema(env.SPORTS_DB);const r=await env.SPORTS_DB.prepare('SELECT status,step,guardian_name,player_name,player_match,match_status,consented_at,completed_at FROM sms_enrollment WHERE phone=? AND team=?').bind(phone,TEAM).first();
  return json({success:true,enrollment:r||null});
+}
+async function syncRosterContact(db,player,guardian,phone){
+ try{
+   await db.prepare("UPDATE britt_team_roster SET parent_name=?,phone=?,sms_status='Enrolled' WHERE lower(player_name)=lower(?)").bind(guardian||'',phone,player).run();
+ }catch(e){}
 }
 function matchPlayer(v){const n=norm(v),exact=PLAYERS.filter(p=>norm(p)===n);if(exact.length===1)return exact[0];return null}
 function norm(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
