@@ -1,6 +1,6 @@
 export async function onRequest(context) {
   const url0=new URL(context.request.url);
-  if((url0.pathname==='/britt/'||url0.pathname==='/britt'||url0.pathname==='/britt.html')&&!validBrittSession(context.request)){
+  if((url0.pathname==='/britt/'||url0.pathname==='/britt'||url0.pathname==='/britt.html'||url0.pathname==='/jodi/'||url0.pathname==='/jodi'||url0.pathname==='/jodi.html')&&!validBrittSession(context.request)){
     return new Response(loginPage(),{status:200,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
   }
   const response = await context.next();
