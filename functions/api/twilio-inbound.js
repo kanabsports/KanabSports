@@ -13,13 +13,8 @@ export async function onRequestPost({request,env}){
    return xml('Kanab Sports: You are unsubscribed from team texts. Reply JOIN if you want to enroll again.');
  }
  if(upper==='JOIN'||!row){
-   await env.SPORTS_DB.prepare("INSERT INTO sms_enrollment(phone,team,status,step,consent_started_at,updated_at) VALUES(?,?,'pending','confirm',datetime('now'),datetime('now')) ON CONFLICT(phone,team) DO UPDATE SET status='pending',step='confirm',guardian_name=NULL,player_name=NULL,player_match=NULL,consent_started_at=datetime('now'),updated_at=datetime('now')").bind(from,TEAM).run();
-   return xml('Kanab Sports — Coach Britt soccer team texts. Recurring operational messages include practices, games, schedule changes, cancellations and team announcements. Message frequency varies. Message & data rates may apply. Reply HELP for help or STOP to opt out. Privacy: kanabsports.com/privacy Terms: kanabsports.com/terms Reply Y to confirm you want to enroll.');
- }
- if(row.step==='confirm'){
-   if(!['Y','YES'].includes(upper))return xml('Kanab Sports: Reply Y to confirm enrollment, or STOP to cancel.');
-   await env.SPORTS_DB.prepare("UPDATE sms_enrollment SET status='consented',step='guardian',consented_at=datetime('now'),updated_at=datetime('now') WHERE phone=? AND team=?").bind(from,TEAM).run();
-   return xml('Thanks! What is your full parent/guardian name? Reply with first and last name.');
+   await env.SPORTS_DB.prepare("INSERT INTO sms_enrollment(phone,team,status,step,consent_started_at,consented_at,updated_at) VALUES(?,?,'consented','guardian',datetime('now'),datetime('now'),datetime('now')) ON CONFLICT(phone,team) DO UPDATE SET status='consented',step='guardian',guardian_name=NULL,player_name=NULL,player_match=NULL,match_status=NULL,consent_started_at=datetime('now'),consented_at=datetime('now'),opted_out_at=NULL,updated_at=datetime('now')").bind(from,TEAM).run();
+   return xml('Kanab Sports: You are now enrolled in recurring Team D notifications for practices, games, schedule changes, cancellations and team announcements. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Privacy: kanabsports.com/privacy Terms: kanabsports.com/terms What is your full parent/guardian name?');
  }
  if(row.step==='guardian'){
    if(body.length<3)return xml('Please reply with the parent/guardian full name (first and last name).');
