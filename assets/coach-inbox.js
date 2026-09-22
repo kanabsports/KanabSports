@@ -1,6 +1,7 @@
 const $=id=>document.getElementById(id);
 let selected='',state=null,older=null,version=0,busy=false,pending=null;
 const drafts=new Map();
+const demo=new URLSearchParams(location.search).get('demo')==='1';
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function notice(text){$('status').textContent=text}
 function signedOut(){version++;state=null;selected='';drafts.clear();pending=null;$('messages').replaceChildren();$('staff').replaceChildren();$('teams').replaceChildren();$('messageForm').reset();$('workspace').hidden=true;$('login').hidden=false}
@@ -28,5 +29,14 @@ $('addForm').onsubmit=e=>{e.preventDefault();task(e.target,async()=>{await api({
 $('staff').onclick=e=>{const b=e.target.closest('[data-remove]');if(!b||!confirm('Remove '+b.dataset.name+' from this team? They will lose access; their messages will remain.'))return;task(null,async()=>{await api({action:'remove',teamId:selected,coachId:b.dataset.remove});await load();notice('Coach access removed.')})};
 $('refresh').onclick=()=>{if(!busy){notice('');load()}};$('older').onclick=()=>{if(!busy)load(true)};
 // Preserve the reader's place; poll only while reading the latest page.
-setInterval(()=>{if(!document.hidden&&!busy&&selected&&$('login').hidden&&$('messages').scrollTop+$('messages').clientHeight>=$('messages').scrollHeight-30){load()}},15000);
-load();
+if(demo){
+ selected='demo';
+ render({coach:{id:'demo-assistant',name:'Alex · Assistant coach (example)'},teams:[{id:'demo',name:'Example Soccer Team',role:'assistant'}],staff:[{id:'demo-head',name:'Sam · Example head coach',role:'head'},{id:'demo-assistant',name:'Alex · Example assistant coach',role:'assistant'}],older:null,messages:[{id:'example-1',sender:'Sam · Head coach',created_at:'2026-09-22 16:00:00',body:'Can you run warmups at practice today? I will bring the cones.'},{id:'example-2',sender:'Alex · Assistant coach',created_at:'2026-09-22 16:05:00',body:'Absolutely. I will handle warmups and the first passing drill.'}]});
+ notice('Read-only design preview · Example team and messages. Nothing here is sent or saved.');
+ $('logout').hidden=true;$('refresh').hidden=true;$('createForm').closest('details').hidden=true;
+ $('messageForm').elements.message.placeholder='Head and assistant coaches both write here';
+ $('messageForm').elements.message.disabled=true;$('messageForm').querySelector('button').disabled=true;
+}else{
+ setInterval(()=>{if(!document.hidden&&!busy&&selected&&$('login').hidden&&$('messages').scrollTop+$('messages').clientHeight>=$('messages').scrollHeight-30){load()}},15000);
+ load();
+}
