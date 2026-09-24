@@ -21,15 +21,18 @@ const messages = [
 ];
 
 // Fictional, read-only family preview. Actual memberships must come from verified accounts.
-export function renderFamilyPreview(container) {
+export function renderFamilyPreview(container, shared = {}) {
+  const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const scheduleData = Array.isArray(shared.events) ? [...events.filter(event => event.team !== 'd'), ...shared.events.filter(event => event.team === 'd')] : events;
+  const messageData = [...messages, ...(Array.isArray(shared.messages) ? shared.messages.filter(message => ['d', 'all'].includes(message.team)) : [])];
   let childId = 'all';
   let teamId = 'all';
   const teamFor = id => teams.find(team => team.id === id);
   const kidsFor = id => children.filter(child => child.teams.includes(id) && (childId === 'all' || child.id === childId)).map(child => child.name).join(' and ');
   const visible = id => (teamId === 'all' || teamId === id) && children.some(child => (childId === 'all' || child.id === childId) && child.teams.includes(id));
   function draw() {
-    const schedule = events.filter(event => visible(event.team));
-    const notes = messages.filter(message => visible(message.team));
+    const schedule = scheduleData.filter(event => visible(event.team));
+    const notes = messageData.filter(message => message.team === 'all' ? teams.some(team => visible(team.id)) : visible(message.team));
     container.innerHTML = `
       <section class="panel">
         <div class="eyebrow">Parent</div>
@@ -52,10 +55,10 @@ export function renderFamilyPreview(container) {
             const team = teamFor(event.team);
             return `<div class="row" style="align-items:flex-start;gap:14px">
               <div style="border-left:4px solid ${team.color};padding-left:12px;min-width:0">
-                <div class="small">${event.date} · ${event.time}</div>
-                <h3><span ${event.practice ? 'style="color:#28754a"' : ''} aria-hidden="true">${event.practice ? '✓' : event.team === 'v' ? '🏐' : '⚽'}</span> ${event.title}</h3>
+                <div class="small">${escape(event.date)} · ${escape(event.time || 'Time TBD')}</div>
+                <h3><span ${event.practice ? 'style="color:#28754a"' : ''} aria-hidden="true">${event.practice ? '✓' : event.team === 'v' ? '🏐' : '⚽'}</span> ${escape(event.title)}</h3>
                 <div class="small">${kidsFor(event.team)} · ${team.name}</div>
-                <div class="small">${event.place}</div>
+                <div class="small">${escape(event.place || 'Location TBD')}</div>
               </div>
             </div>`;
           }).join('') : '<p class="empty">No upcoming events for this child and team. Choose All Teams or another child.</p>'}
@@ -63,8 +66,8 @@ export function renderFamilyPreview(container) {
         <section class="panel" aria-label="Family Team Messages">
           <h2>Team Messages</h2>
           ${notes.length ? notes.map(message => `<article class="message">
-            <div class="avatar" aria-hidden="true">${message.coach.split(' ')[1][0]}</div>
-            <div><h3>${message.coach}</h3><small>${teamFor(message.team).name} · For ${kidsFor(message.team)}</small><p>${message.text}</p></div>
+            <div class="avatar" aria-hidden="true">${escape(String(message.coach || 'Coach').trim().charAt(0) || 'C')}</div>
+            <div><h3>${escape(message.coach || 'Coach')}</h3><small>${message.team === 'all' ? 'All Teams · Community Message' : teamFor(message.team).name + ' · For ' + kidsFor(message.team)}</small><p style="white-space:pre-wrap">${escape(message.text)}</p></div>
           </article>`).join('') : '<p class="empty">No messages for this child and team.</p>'}
           <p class="small" style="margin-top:20px">Parent view · Team management stays in your coach tabs.</p>
         </section>
