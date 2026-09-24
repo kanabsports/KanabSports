@@ -1,0 +1,12 @@
+{
+  "approved": false,
+  "gameId": "football-varsity-2026-09-25-parowan",
+  "gameDate": "2026-09-25",
+  "opponent": "Parowan",
+  "level": "Varsity",
+  "opensAt": "2026-09-25T19:00:00-06:00",
+  "expiresAt": "2026-09-28T10:00:00-06:00",
+  "timeZone": "America/Denver",
+  "repeatOnEveryLoad": true,
+  "confirmedFinal": null
+}
