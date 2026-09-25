@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Valley High Coach Portal · Kanab Sports</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{--ink:#111216;--muted:#6d7179;--paper:#f5f4f1;--card:#fff;--line:#e3e1dc;--orange:#d76732;--orange-soft:#fff0e8;--green:#197648;--green-soft:#e8f6ee;--amber:#9c6500;--amber-soft:#fff6dc}
+*{box-sizing:border-box}html{background:var(--paper)}body{margin:0;background:var(--paper);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+button,a,select{font:inherit}.wrap{width:min(760px,calc(100% - 28px));margin:auto}
+.top{position:sticky;top:0;z-index:20;background:rgba(17,18,22,.96);backdrop-filter:blur(10px);color:#fff;border-bottom:1px solid #292a2f}.topin{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 0}.brand{font-weight:950;letter-spacing:-.5px}.brand span{color:var(--orange)}.pilot{font-size:10px;font-weight:900;letter-spacing:1.1px;text-transform:uppercase;color:#d9d9dc}
+.hero{background:#121318;color:#fff;padding:28px 0 24px;border-bottom:4px solid var(--orange)}.school{font-size:11px;font-weight:950;letter-spacing:1.5px;text-transform:uppercase;color:#f39a70}.hero h1{font-size:clamp(38px,10vw,62px);line-height:.94;letter-spacing:-2.5px;margin:8px 0 10px}.hero p{margin:0;color:#c6c8ce;line-height:1.5}
+.switch{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:20px}.switch select{width:100%;appearance:none;border:1px solid #383a40;background:#1c1e23;color:#fff;border-radius:12px;padding:14px 42px 14px 14px;font-weight:850}.refresh{border:1px solid #383a40;background:#1c1e23;color:#fff;border-radius:12px;padding:0 15px;font-weight:900;cursor:pointer}
+main{padding:18px 0 52px}.grid{display:grid;gap:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:19px;box-shadow:0 1px 0 rgba(0,0,0,.02)}.card h2{font-size:20px;margin:0 0 5px;letter-spacing:-.5px}.card p{margin:0;color:var(--muted);line-height:1.5}.eyebrow{font-size:10px;font-weight:950;letter-spacing:1.2px;text-transform:uppercase;color:var(--orange);margin-bottom:7px}
+.next{background:var(--ink);color:#fff;border-color:var(--ink)}.next .eyebrow{color:#f39a70}.next h2{font-size:28px;margin-bottom:6px}.next p{color:#c9cbd0}.nextmeta{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:900;background:#282a30;color:#fff}.chip.orange{background:var(--orange)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:16px}.btn{min-height:48px;border:0;border-radius:12px;padding:12px 14px;font-weight:900;text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--ink);color:#fff}.btn.primary{background:var(--orange)}.btn.light{background:#f0efec;color:var(--ink);border:1px solid var(--line)}.btn.full{grid-column:1/-1}
+.statuslist{margin-top:12px;border-top:1px solid #eee}.statusrow{display:grid;grid-template-columns:32px 1fr auto;gap:10px;align-items:center;padding:13px 0;border-bottom:1px solid #eee}.statusrow:last-child{border-bottom:0}.dot{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:13px;font-weight:950}.dot.good{background:var(--green-soft);color:var(--green)}.dot.warn{background:var(--amber-soft);color:var(--amber)}.dot.neutral{background:#efeff1;color:#676a72}.statusrow strong{display:block;font-size:14px}.statusrow small{display:block;color:var(--muted);margin-top:2px;line-height:1.35}.statusaction{border:0;background:transparent;color:var(--orange);font-weight:900;font-size:12px;cursor:pointer;padding:8px 0;text-decoration:none}
+.sectionhead{display:flex;align-items:end;justify-content:space-between;gap:12px}.count{font-size:11px;font-weight:900;color:var(--muted)}
+.schedule{margin-top:9px}.game{display:grid;grid-template-columns:72px 1fr auto;gap:12px;padding:14px 0;border-top:1px solid #eee;align-items:center}.game:first-child{border-top:0}.date{font-size:12px;font-weight:950;text-transform:uppercase;line-height:1.25}.game strong{display:block}.game small{display:block;color:var(--muted);margin-top:3px}.home{color:var(--orange);font-size:10px;font-weight:950;text-transform:uppercase}.away{color:#666a72;font-size:10px;font-weight:950;text-transform:uppercase}.past{opacity:.5}.empty{padding:24px 0;color:var(--muted);text-align:center}
+.notice{border-radius:14px;background:var(--orange-soft);border:1px solid #f0c1aa;padding:14px;margin-top:14px;font-size:13px;line-height:1.5}.notice strong{color:#8b3a18}
+.tabs{display:flex;gap:8px;overflow:auto;padding-bottom:2px;margin:12px -2px 0}.tab{white-space:nowrap;border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 12px;font-size:12px;font-weight:900;cursor:pointer}.tab[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.footer{color:#777b83;font-size:11px;line-height:1.5;padding:4px 0 24px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,18px);opacity:0;pointer-events:none;background:#111;color:#fff;border-radius:999px;padding:11px 15px;font-size:12px;font-weight:900;transition:.2s;z-index:50;white-space:nowrap}.toast.show{transform:translate(-50%,0);opacity:1}
+@media(max-width:520px){.actions{grid-template-columns:1fr}.btn.full{grid-column:auto}.game{grid-template-columns:64px 1fr}.game>div:last-child{grid-column:2}.statusrow{grid-template-columns:32px 1fr}.statusaction{grid-column:2;justify-self:start;padding-top:0}.hero{padding-top:23px}}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap topin"><div class="brand">KANAB <span>SPORTS</span></div><div class="pilot">High School Shell · Dev</div></div></header>
+<section class="hero"><div class="wrap"><div class="school">Valley High School · Orderville, Utah</div><h1 id="heroTitle">Girls Volleyball</h1><p id="heroSub">Fall 2026 · Coach workspace prototype</p><div class="switch"><select id="sportSelect" aria-label="Choose sport"></select><button class="refresh" id="refreshBtn" type="button" aria-label="Refresh status">↻</button></div></div></section>
+<main class="wrap"><div class="grid">
+<section class="card next"><div class="eyebrow">Next up</div><h2 id="nextOpponent">Loading…</h2><p id="nextDetails"></p><div class="nextmeta" id="nextMeta"></div><div class="actions"><a class="btn primary" id="maxprepsBtn" target="_blank" rel="noopener">Open MaxPreps ↗</a><button class="btn" id="viewScheduleBtn" type="button">View Full Schedule</button></div></section>
+
+<section class="card"><div class="eyebrow">Coach checklist</div><h2>Is everything current?</h2><p>The coach should mostly confirm or correct. The platform should do the typing whenever it can.</p><div class="statuslist">
+<div class="statusrow"><div class="dot good">✓</div><div><strong>Schedule imported</strong><small id="scheduleStatus">From Valley High fall sports poster.</small></div><button class="statusaction" id="confirmSchedule">Confirm</button></div>
+<div class="statusrow"><div class="dot warn" id="scoresDot">!</div><div><strong>Official scores</strong><small>MaxPreps remains the official update point while we wait on an integration answer.</small></div><a class="statusaction maxprepsLink" target="_blank" rel="noopener">Check MaxPreps ↗</a></div>
+<div class="statusrow"><div class="dot warn" id="rosterDot">!</div><div><strong>Roster</strong><small id="rosterStatus">Needs coach confirmation.</small></div><button class="statusaction" id="confirmRoster">Mark reviewed</button></div>
+<div class="statusrow"><div class="dot neutral">•</div><div><strong>Automatic MaxPreps sync</strong><small>Not connected. The shell is ready for a sanctioned feed if MaxPreps provides one.</small></div><span class="statusaction" style="color:#747780">Pending</span></div>
+</div></section>
+
+<section class="card"><div class="sectionhead"><div><div class="eyebrow">Official data workflow</div><h2>One update, not two</h2></div></div><p>Until MaxPreps gives us an approved integration path, coaches update official schedules/scores there. This portal organizes the local experience and tells them what needs attention.</p><div class="actions"><a class="btn primary maxprepsLink" target="_blank" rel="noopener">Update on MaxPreps</a><button class="btn light" id="copyPublicBtn" type="button">Preview Public Data</button></div><div class="notice"><strong>Prototype rule:</strong> No Twilio, no parent portal, and no duplicate score entry for the high-school tier.</div></section>
+
+<section class="card" id="scheduleCard"><div class="sectionhead"><div><div class="eyebrow">Imported schedule</div><h2 id="scheduleTitle">Fall 2026</h2></div><div class="count" id="eventCount"></div></div><div class="tabs"><button class="tab" type="button" data-filter="upcoming" aria-pressed="true">Upcoming</button><button class="tab" type="button" data-filter="all" aria-pressed="false">All events</button></div><div class="schedule" id="schedule"></div></section>
+
+<section class="card"><div class="eyebrow">Team setup</div><h2 id="teamSetupTitle">Volleyball</h2><div class="statuslist">
+<div class="statusrow"><div class="dot good">✓</div><div><strong>School identity</strong><small>Valley High · Buffaloes · black / orange / white</small></div><span class="statusaction" style="color:#197648">Ready</span></div>
+<div class="statusrow"><div class="dot warn">!</div><div><strong>Coaching staff</strong><small id="coachStaff">Head coach found; staff confirmation needed.</small></div><button class="statusaction" id="confirmStaff">Confirm</button></div>
+<div class="statusrow"><div class="dot neutral">•</div><div><strong>Public sports widget</strong><small>Deferred until the coach experience is dialed in.</small></div><span class="statusaction" style="color:#747780">Later</span></div>
+</div></section>
+</div>
+<div class="footer">Development prototype · Valley High data was imported from the Fall Sports 2026–27 schedule supplied by Valley High. MaxPreps data is not being scraped or automatically synchronized.</div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const SPORTS={
+volleyball:{label:'Girls Volleyball',short:'Volleyball',season:'Fall 2026',maxpreps:'https://www.maxpreps.com/ut/orderville/valley-buffalos/volleyball/',coach:'Harmony Cox · Head Coach',events:[
+['2026-08-12','Water Canyon','Away','4:30 / 6:00'],['2026-08-14','Lincoln County NV','Home','4:30 / 6:00'],['2026-08-19','Piute','Home','5:45 / 7:00'],['2026-08-21','Tabiona','Away','5:30 / 7:00'],['2026-08-22','Altamont','Away','11:30 / 1:30'],['2026-08-25','Parowan','Away','5:15 / 6:30'],['2026-08-26','Milford','Home','5:45 / 7:00'],['2026-09-02','Bryce Valley','Away','5:30 / 7:00'],['2026-09-09','Escalante','Home','5:45 / 7:00'],['2026-09-12','Desert Hills Tournament','Away','All Day'],['2026-09-16','Panguitch','Away','5:45 / 7:00'],['2026-09-19','Parowan Tournament','Away','All Day'],['2026-09-23','Wayne','Home','5:45 / 7:00'],['2026-09-26','Parowan Tournament','Away','All Day'],['2026-09-30','Water Canyon','Home','5:45 / 7:00'],['2026-10-02','SVC Tournament','Away','TBA','2026-10-03'],['2026-10-07','Piute','Away','5:45 / 7:00'],['2026-10-15','Wayne','Away','5:45 / 7:00'],['2026-10-16','San Juan','Home','2:45 / 4:00'],['2026-10-21','State 1st Round','Home sites','TBA'],['2026-10-23','State Volleyball','UVU sites','TBA','2026-10-24']]},
+baseball:{label:'Baseball',short:'Baseball',season:'Fall 2026',maxpreps:'https://www.maxpreps.com/ut/orderville/valley-buffalos/baseball/',coach:'Coach confirmation needed',events:[
+['2026-08-12','Piute','Away','3:00 / 5:00'],['2026-08-14','Jeff Wood Memorial','Home','TBA','2026-08-15'],['2026-08-19','Pinnacle','Away','3:00'],['2026-08-21','Wayne','Home','3:00 / 5:00'],['2026-08-22','Wendover','Home','10:00'],['2026-08-26','Panguitch','Home','3:00 / 5:00'],['2026-08-28','Green River','Away','3:00 / 5:00'],['2026-09-02','Bryce Valley','Away','3:00 / 5:00'],['2026-09-04','Tintic','Away','3:00 / 5:00'],['2026-09-05','Altamont','Away','11:00 / 1:00'],['2026-09-09','Piute','Home','3:00 / 5:00'],['2026-09-11','Pinnacle','Home','3:00'],['2026-09-16','Wayne','Away','3:00 / 5:00'],['2026-09-18','Panguitch','Away','5:00'],['2026-09-23','Green River','Home','3:00 / 5:00'],['2026-09-25','Bryce Valley','Home','3:00 / 5:00'],['2026-10-02','State 1st Round','Home sites','TBA'],['2026-10-06','State Quarter Finals','TBA','TBA'],['2026-10-09','State Finals','TBA','TBA','2026-10-11']]},
+crosscountry:{label:'Cross Country',short:'Cross Country',season:'Fall 2026',maxpreps:'https://www.maxpreps.com/ut/orderville/valley-buffalos/',coach:'Coach confirmation needed',events:[
+['2026-08-27','Wayne','Meet','5:00'],['2026-08-30','Valley','Home meet','5:00'],['2026-09-10','Escalante','Meet','5:00'],['2026-09-17','Panguitch','Meet','5:00'],['2026-09-24','Milford','Meet','5:00'],['2026-10-01','Piute','Meet','4:00'],['2026-10-08','Water Canyon','Meet','4:00'],['2026-10-14','Bryce Valley','Meet','4:00'],['2026-10-28','State @ Sugar House','State','TBA']]}
+};
+const TODAY='2026-09-24';
+let sportKey=localStorage.getItem('valleyCoachSport')||'volleyball',filter='upcoming';
+const $=id=>document.getElementById(id);
+function niceDate(s){return new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',timeZone:'America/Denver'}).format(new Date(s+'T12:00:00-06:00'))}
+function showToast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>$('toast').classList.remove('show'),1800)}
+function nextEvent(s){return s.events.find(e=>(e[4]||e[0])>=TODAY)}
+function renderSchedule(){
+ const s=SPORTS[sportKey],rows=s.events.filter(e=>filter==='all'||(e[4]||e[0])>=TODAY);
+ $('eventCount').textContent=s.events.length+' events imported';
+ $('scheduleTitle').textContent=s.season+' · '+s.short;
+ $('schedule').innerHTML=rows.length?rows.map(e=>{const past=(e[4]||e[0])<TODAY;const date=e[4]?niceDate(e[0])+'–'+niceDate(e[4]):niceDate(e[0]);const type=e[2].toLowerCase().includes('home')?'home':'away';return '<div class="game '+(past?'past':'')+'"><div class="date">'+date+'</div><div><strong>'+e[1]+'</strong><small>'+e[3]+'</small></div><div class="'+type+'">'+e[2]+'</div></div>'}).join(''):'<div class="empty">No upcoming events found.</div>';
+}
+function render(){
+ const s=SPORTS[sportKey],n=nextEvent(s);localStorage.setItem('valleyCoachSport',sportKey);
+ $('heroTitle').textContent=s.label;$('heroSub').textContent=s.season+' · Coach workspace prototype';$('teamSetupTitle').textContent=s.short;$('coachStaff').textContent=s.coach;
+ document.querySelectorAll('.maxprepsLink').forEach(a=>a.href=s.maxpreps);$('maxprepsBtn').href=s.maxpreps;
+ const confirmed=localStorage.getItem('valleyScheduleConfirmed:'+sportKey)==='1';$('confirmSchedule').textContent=confirmed?'Confirmed ✓':'Confirm';$('scheduleStatus').textContent=(confirmed?'Coach confirmed · ':'')+s.events.length+' events imported from Valley High fall sports poster.';
+ const roster=localStorage.getItem('valleyRosterReviewed:'+sportKey)==='1';$('confirmRoster').textContent=roster?'Reviewed ✓':'Mark reviewed';$('rosterStatus').textContent=roster?'Coach marked roster reviewed.':'Needs coach confirmation.';
+ if(n){$('nextOpponent').textContent=n[1];$('nextDetails').textContent=(n[4]?niceDate(n[0])+'–'+niceDate(n[4]):niceDate(n[0]))+' · '+n[3];$('nextMeta').innerHTML='<span class="chip orange">'+n[2]+'</span><span class="chip">'+s.short+'</span>'}else{$('nextOpponent').textContent='Season complete';$('nextDetails').textContent='No future events are listed.';$('nextMeta').innerHTML=''}
+ renderSchedule();
+}
+Object.entries(SPORTS).forEach(([k,s])=>{const o=document.createElement('option');o.value=k;o.textContent=s.label;$('sportSelect').appendChild(o)});$('sportSelect').value=sportKey;
+$('sportSelect').onchange=e=>{sportKey=e.target.value;render()};$('viewScheduleBtn').onclick=()=>{$('scheduleCard').scrollIntoView({behavior:'smooth',block:'start'})};
+$('refreshBtn').onclick=()=>{render();showToast('Portal refreshed')};$('confirmSchedule').onclick=()=>{localStorage.setItem('valleyScheduleConfirmed:'+sportKey,'1');render();showToast('Schedule confirmed')};$('confirmRoster').onclick=()=>{localStorage.setItem('valleyRosterReviewed:'+sportKey,'1');render();showToast('Roster marked reviewed')};$('confirmStaff').onclick=()=>showToast('Staff confirmation flow comes next');$('copyPublicBtn').onclick=()=>showToast('Public preview comes after coach shell');
+document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));renderSchedule()});
+render();
+</script>
+</body></html>
