@@ -60,7 +60,7 @@ baseball:{label:'Baseball',short:'Baseball',season:'Fall 2026',maxpreps:'https:/
 crosscountry:{label:'Cross Country',short:'Cross Country',season:'Fall 2026',maxpreps:'https://www.maxpreps.com/ut/orderville/valley-buffalos/',coach:'Coach confirmation needed',events:[
 ['2026-08-27','Wayne','Meet','5:00'],['2026-08-30','Valley','Home meet','5:00'],['2026-09-10','Escalante','Meet','5:00'],['2026-09-17','Panguitch','Meet','5:00'],['2026-09-24','Milford','Meet','5:00'],['2026-10-01','Piute','Meet','4:00'],['2026-10-08','Water Canyon','Meet','4:00'],['2026-10-14','Bryce Valley','Meet','4:00'],['2026-10-28','State @ Sugar House','State','TBA']]}
 };
-const TODAY='2026-09-24';
+const TODAY=(()=>{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Denver',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>parts.find(p=>p.type===t)?.value;return get('year')+'-'+get('month')+'-'+get('day')})();
 let sportKey=localStorage.getItem('valleyCoachSport')||'volleyball',filter='upcoming';
 const $=id=>document.getElementById(id);
 function niceDate(s){return new Intl.DateTimeFormat('en-US',{month:'short',day:'numeric',timeZone:'America/Denver'}).format(new Date(s+'T12:00:00-06:00'))}
