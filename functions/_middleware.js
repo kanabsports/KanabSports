@@ -28,7 +28,9 @@ export async function onRequest(context) {
     const guard=`<script id="coachTurnstileGuard">(function(){const form=document.getElementById('coachForm'),button=document.getElementById('submitButton'),status=document.getElementById('coachStatus'),widget=document.querySelector('.cf-turnstile'),type=document.getElementById('type'),result=document.getElementById('result');if(!form||!button||!status||!widget)return;const token=()=>form.querySelector('input[name="cf-turnstile-response"]')?.value;form.addEventListener('submit',e=>{if(token())return;e.preventDefault();e.stopImmediatePropagation();status.textContent='Waiting for verification…';button.disabled=false},true)})();</script>`;if(!html.includes('id="coachTurnstileGuard"'))html=html.replace('</body>',guard+'\n</body>')
   }
   if(!html.includes('/assets/coach-autofill.js'))html=html.replace('</body>','<script src="/assets/coach-autofill.js" defer></script>\n</body>');
-  const headers=new Headers(response.headers);headers.delete('content-length');return new Response(html,{status:response.status,statusText:response.statusText,headers});
+  const headers=new Headers(response.headers);headers.delete('content-length');
+  if(url.pathname==='/'||url.pathname==='/index.html'||url.pathname==='/homecoming/'||url.pathname==='/homecoming')headers.set('Cache-Control','no-store');
+  return new Response(html,{status:response.status,statusText:response.statusText,headers});
 }
 
 function validBrittSession(request){const m=(request.headers.get('Cookie')||'').match(/(?:^|;\s*)britt_coach_session=([^;]+)/);if(!m)return false;try{const d=JSON.parse(atob(decodeURIComponent(m[1])));return !!d.coach&&d.exp>Date.now()}catch{return false}}
