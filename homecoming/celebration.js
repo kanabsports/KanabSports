@@ -1,70 +1,40 @@
-
-// Homecoming 2026: runs on every page load, with no remembered dismissal.
-(async function () {
+// Show the finished homecoming celebration on every homepage load through Monday at 3 PM.
+(() => {
   const cutoff = Date.parse('2026-09-28T15:00:00-06:00');
-  function confirmedHomecomingWin(team, now) {
-    if (now < Date.parse('2026-09-25T19:00:00-06:00') || now >= cutoff) return null;
-    return [...(team?.results || []), ...(team?.result ? [team.result] : [])].find(r =>
-      r.date === '2026-09-25' && /^parowan$/i.test((r.opponent || '').trim()) &&
-      (r.level || 'Varsity') === 'Varsity' &&
-      Number.isFinite(r.ours) && Number.isFinite(r.theirs) &&
-      r.ours > r.theirs && r.theirs >= 0 &&
-      (!r.status || /^(final|completed)$/i.test(r.status))
-    );
-  }
-  const result = confirmedHomecomingWin(typeof teams === 'undefined' ? null : teams.find(t => t.id === 'football'), Date.now());
-  if (!result) return;
-  try {
-    const response = await fetch('/homecoming/', {cache: 'no-store'});
-    if (!response.ok || Date.now() >= cutoff) return;
-    const template = new DOMParser().parseFromString(await response.text(), 'text/html');
-    const dialogTemplate = template.querySelector('dialog#win');
-    const styleTemplate = template.querySelector('style');
-    if (!dialogTemplate || !styleTemplate) return;
-    const host = document.createElement('div');
-    const shadow = host.attachShadow({mode: 'open'});
-    shadow.append(styleTemplate.cloneNode(true), dialogTemplate.cloneNode(true));
-    const style = document.createElement('style');
-    style.textContent = ':host{font-family:Arial,Helvetica,sans-serif}';
-    shadow.append(style);
-    document.body.append(host);
-    const modal = shadow.querySelector('dialog');
-    shadow.querySelector('.final').textContent = 'FINAL · SEPTEMBER 25, 2026';
-    const scoreboard = shadow.querySelector('.scoreboard');
-    scoreboard.setAttribute('aria-label', 'Kanab ' + result.ours + ', Parowan ' + result.theirs);
-    scoreboard.querySelectorAll('.score')[0].textContent = result.ours;
-    scoreboard.querySelectorAll('.score')[1].textContent = result.theirs;
-    const previousFocus = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const close = () => modal.close();
-    shadow.querySelector('#close').addEventListener('click', close);
-    shadow.querySelector('#back').addEventListener('click', close);
-    const timeout = setTimeout(close, Math.max(0, cutoff - Date.now()));
-    const checkExpiry = () => { if (Date.now() >= cutoff && modal.open) close(); };
-    document.addEventListener('visibilitychange', checkExpiry);
-    modal.addEventListener('close', () => {
-      clearTimeout(timeout);
-      document.removeEventListener('visibilitychange', checkExpiry);
-      document.body.style.overflow = previousOverflow;
-      host.remove();
-      previousFocus?.focus({preventScroll:true});
-    }, {once:true});
-    modal.showModal();
-    modal.querySelector('.celebration').classList.add('entrance');
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const confetti = shadow.querySelector('#confetti');
-      for (let i = 0; i < 64; i++) {
-        const piece = document.createElement('i');
-        piece.style.setProperty('--left', Math.random()*100+'%');
-        piece.style.setProperty('--delay', Math.random()*1.4+'s');
-        piece.style.setProperty('--drift', (Math.random()-.5)*180+'px');
-        piece.style.setProperty('--color', ['#f12c3d','#fff5df','#eab753'][i%3]);
-        confetti.append(piece);
-      }
-    }
-    shadow.querySelector('#close').focus({preventScroll:true});
-  } catch (error) {
-    console.warn('Homecoming celebration unavailable', error);
-  }
+  const now = Date.now();
+  if (now < Date.parse('2026-09-25T19:00:00-06:00') || now >= cutoff) return;
+  const football = typeof teams === 'undefined' ? null : teams.find(team => team.id === 'football');
+  const final = [...(football?.results || []), ...(football?.result ? [football.result] : [])].find(result =>
+    result.date === '2026-09-25' && /^parowan$/i.test((result.opponent || '').trim()) &&
+    (result.level || 'Varsity') === 'Varsity' &&
+    (result.status || '').toUpperCase() === 'FINAL' &&
+    Number(result.ours) === 49 && Number(result.theirs) === 0
+  );
+  if (!final) return;
+
+  // A regular same-origin frame avoids a second fetch and a dialog inside Shadow DOM.
+  const frame = document.createElement('iframe');
+  frame.title = 'Kanab Cowboys Homecoming Champions celebration';
+  frame.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;height:100dvh;border:0;background:transparent;z-index:2147483647';
+  frame.src = '/homecoming/?embed=1';
+  let ready = false;
+  let expiry, failedLoad;
+  const remove = () => {
+    clearTimeout(expiry);
+    clearTimeout(failedLoad);
+    window.removeEventListener('message', onMessage);
+    document.removeEventListener('visibilitychange', checkExpiry);
+    frame.remove();
+  };
+  const checkExpiry = () => { if (Date.now() >= cutoff) remove(); };
+  const onMessage = event => {
+    if (event.origin !== location.origin || event.source !== frame.contentWindow) return;
+    if (event.data === 'kanab-homecoming-ready') ready = true;
+    if (event.data === 'kanab-homecoming-close') remove();
+  };
+  window.addEventListener('message', onMessage);
+  document.addEventListener('visibilitychange', checkExpiry);
+  expiry = setTimeout(remove, cutoff - now);
+  failedLoad = setTimeout(() => { if (!ready) remove(); }, 7000);
+  document.body.append(frame);
 })();
