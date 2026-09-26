@@ -1,13 +1,13 @@
 {
-  "id": "football-2026-09-17-beaver",
+  "id": "football-2026-09-25-parowan",
   "sport": "Football",
   "team": "Cowboys",
-  "opponent": "Beaver",
-  "teamScore": 14,
-  "opponentScore": 7,
-  "date": "2026-09-17",
-  "publishedAt": "2026-09-18T19:08:00-06:00",
-  "level": "win",
-  "maxprepsUrl": "https://www.maxpreps.com/ut/kanab/kanab-cowboys/football/schedule/",
+  "opponent": "Parowan",
+  "teamScore": 49,
+  "opponentScore": 0,
+  "date": "2026-09-25",
+  "publishedAt": "2026-09-25T20:46:33-06:00",
+  "level": "homecoming",
+  "maxprepsUrl": "https://www.maxpreps.com/ut/football/game/kanab-vs-parowan/9-25-2026/?c=420b5d32-26a0-495a-b3b2-86a9b03fa2ce",
   "hudlUrl": "https://fan.hudl.com/usa/ut/kanab/organization/15658/kanab-high-school"
 }
