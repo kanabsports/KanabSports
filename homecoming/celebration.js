@@ -30,8 +30,10 @@
     document.body.append(host);
     const modal = shadow.querySelector('dialog');
     shadow.querySelector('.final').textContent = 'FINAL · SEPTEMBER 25, 2026';
-    const score = shadow.querySelector('.victory > p');
-    score.textContent = 'KANAB ' + result.ours + ' – PAROWAN ' + result.theirs;
+    const scoreboard = shadow.querySelector('.scoreboard');
+    scoreboard.setAttribute('aria-label', 'Kanab ' + result.ours + ', Parowan ' + result.theirs);
+    scoreboard.querySelectorAll('.score')[0].textContent = result.ours;
+    scoreboard.querySelectorAll('.score')[1].textContent = result.theirs;
     const previousFocus = document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -39,8 +41,11 @@
     shadow.querySelector('#close').addEventListener('click', close);
     shadow.querySelector('#back').addEventListener('click', close);
     const timeout = setTimeout(close, Math.max(0, cutoff - Date.now()));
+    const checkExpiry = () => { if (Date.now() >= cutoff && modal.open) close(); };
+    document.addEventListener('visibilitychange', checkExpiry);
     modal.addEventListener('close', () => {
       clearTimeout(timeout);
+      document.removeEventListener('visibilitychange', checkExpiry);
       document.body.style.overflow = previousOverflow;
       host.remove();
       previousFocus?.focus({preventScroll:true});
