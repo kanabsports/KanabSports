@@ -64,7 +64,7 @@ const svg=k=>`<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="cu
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=s=>new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 const dialog=document.getElementById('sportDialog'),content=document.getElementById('dialogContent');let activeTeam=null,opener=null;
-function footballNextGame(){const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Denver',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const g=footballData.games.find(g=>g[0]==='Varsity'&&('2026-'+g[1])>=today);return g?esc(date('2026-'+g[1])+' · '+g[2]+' · '+g[4]+(g[5]==='Homecoming'?' · HOME · HOMECOMING':'')):'Season schedule available'}
+function footballNextGame(){const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Denver',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());const g=footballData.games.find(g=>g[0]==='Varsity'&&('2026-'+g[1])>=today&&!recordedResults(teams.find(t=>t.id==='football')).some(r=>r.date==='2026-'+g[1]));return g?esc(date('2026-'+g[1])+' · '+g[2]+' · '+g[4]+(g[5]==='Homecoming'?' · HOME · HOMECOMING':'')):'Season schedule available'}
 
 const SCORE_CARD_MS=48*3600000,SCORE_TICKER_MS=6*24*3600000;
 function finalTime(r){
