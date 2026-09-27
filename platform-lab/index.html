@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Kanab Sports · Platform Lab</title>
+  <link rel="stylesheet" href="/platform-lab/styles.css">
+</head>
+<body data-page="console">
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="ks-mark" href="/platform-lab/" aria-label="Kanab Sports Platform Lab">
+        <span class="ks-dot"></span>
+        <span><strong>Kanab Sports</strong><small>Platform Lab</small></span>
+      </a>
+      <span class="lab-pill">Private test environment</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero console-hero">
+      <div>
+        <p class="eyebrow">PLATFORM CONSOLE</p>
+        <h1>Three towns. One platform.<br><span>Zero mix-ups.</span></h1>
+        <p class="hero-copy">Kanab is the reference tenant. Town 2 and Town 3 use fictional data so we can stress-test roles, messaging, budgets, branding and tenant isolation without touching real school records.</p>
+      </div>
+      <div class="hero-status">
+        <div class="shield">✓</div>
+        <div><strong id="isolationSummary">Isolation ready</strong><small>Run the test suite below</small></div>
+      </div>
+    </section>
+
+    <section class="metric-grid" aria-label="Platform summary">
+      <article class="metric"><span>Organizations</span><strong id="orgCount">3</strong><small>1 reference + 2 labs</small></article>
+      <article class="metric"><span>Open issues</span><strong id="issueCount">—</strong><small>Across all organizations</small></article>
+      <article class="metric"><span>SMS credit</span><strong id="creditTotal">—</strong><small>Test ledger total</small></article>
+      <article class="metric"><span>Isolation tests</span><strong id="testScore">Not run</strong><small>No production data is changed</small></article>
+    </section>
+
+    <section class="section-head">
+      <div>
+        <p class="eyebrow">ORGANIZATIONS</p>
+        <h2>Your towns</h2>
+      </div>
+      <button class="button secondary" id="runTestsBtn">Run isolation tests</button>
+    </section>
+
+    <section id="orgGrid" class="org-grid" aria-live="polite"></section>
+
+    <section class="test-panel" id="testPanel">
+      <div class="test-panel-head">
+        <div>
+          <p class="eyebrow">SAFETY CHECK</p>
+          <h2>Tenant isolation</h2>
+          <p>These tests deliberately try to cross the fence between Kanab, Town 2 and Town 3.</p>
+        </div>
+        <div class="test-badge" id="testBadge">Waiting</div>
+      </div>
+      <div id="testResults" class="test-results">
+        <div class="empty-state">Tap <strong>Run isolation tests</strong>. The lab will attempt cross-town reads, writes, messaging and branding changes.</div>
+      </div>
+    </section>
+
+    <section class="comfort-panel">
+      <div class="comfort-icon">◎</div>
+      <div>
+        <h2>Compliance stays boring on purpose.</h2>
+        <p>This lab does not add private minor-to-coach chat, sensitive student records or real billing. We keep the first sellable version focused on schedules, rosters, guardian communications, opt-in messaging, roles and auditability. Legal/compliance work becomes a short checklist around a deliberately simple product—not a second full-time job.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell footer">
+    <span>Kanab Sports Platform Lab</span>
+    <span>Fictional towns · No real texts · No real invoices</span>
+  </footer>
+
+  <script src="/platform-lab/app.js"></script>
+</body>
+</html>
