@@ -118,7 +118,7 @@ function parseRequest(params) {
 function buildUhsaaUrl(date, provider) {
   const [year, month, day] = date.split('-').map(Number);
   const target = new URL('https://uhsaa.org/scores/');
-  target.searchParams.set('date', \`\${month}_\${day}_\${year}\`);
+  target.searchParams.set('date', `${month}_${day}_${year}`);
   target.searchParams.set('season', provider.season);
   target.searchParams.set('sid', provider.sid);
   target.searchParams.set('sport', provider.sport);
