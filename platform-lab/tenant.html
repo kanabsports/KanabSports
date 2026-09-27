@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Tenant · Kanab Sports Platform Lab</title>
+  <link rel="stylesheet" href="/platform-lab/styles.css">
+</head>
+<body data-page="tenant">
+  <header class="topbar tenant-topbar">
+    <div class="shell topbar-inner">
+      <a class="ks-mark" href="/platform-lab/">
+        <span class="ks-dot"></span>
+        <span><strong>Kanab Sports</strong><small>Platform Lab</small></span>
+      </a>
+      <a class="back-link" href="/platform-lab/">← Platform Console</a>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="tenant-hero" id="tenantHero">
+      <div class="tenant-crest" id="tenantCrest">KS</div>
+      <div class="tenant-title">
+        <div class="tenant-labels"><span id="tenantType">Organization</span><span id="tenantMode">LAB</span></div>
+        <h1 id="tenantName">Loading…</h1>
+        <p id="tenantTagline"></p>
+      </div>
+      <div class="role-switch">
+        <label for="roleSelect">Viewing as</label>
+        <select id="roleSelect">
+          <option>School Admin / Principal</option>
+          <option>Athletic Director</option>
+          <option>Head Coach</option>
+        </select>
+      </div>
+    </section>
+
+    <div class="isolation-ribbon">
+      <span class="shield-mini">✓</span>
+      <div><strong>Tenant fence active</strong><small id="orgIdLabel">organization_id: —</small></div>
+      <button class="text-button" id="tryCrossRead">Try a cross-town read</button>
+    </div>
+
+    <section class="dashboard-grid">
+      <article class="panel sms-panel">
+        <div class="panel-head">
+          <div><p class="eyebrow">MESSAGING</p><h2>SMS usage</h2></div>
+          <span class="status-chip" id="smsStatus">Healthy</span>
+        </div>
+        <div class="sms-money"><strong id="smsRemaining">$—</strong><span>remaining</span></div>
+        <div class="progress-track"><div class="progress-fill" id="smsProgress"></div><i class="threshold threshold-75" title="75% alert"></i><i class="threshold threshold-90" title="90% invoice"></i></div>
+        <div class="progress-labels"><span id="smsUsed">— used</span><span id="smsBudget">— starting credit</span></div>
+        <div class="sms-stats">
+          <div><span>Texts sent</span><strong id="textsSent">—</strong></div>
+          <div><span>Approx. left</span><strong id="textsLeft">—</strong></div>
+          <div><span>System msgs</span><strong id="systemTexts">—</strong></div>
+        </div>
+        <div class="alert-box" id="smsAlert"></div>
+        <button class="button primary full" id="simulateText">Simulate a team text</button>
+        <p class="tiny-note">Simulation only. This lab never sends a real SMS or charges Twilio.</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div><p class="eyebrow">USAGE</p><h2>Top 5 texters</h2></div>
+          <span class="muted-chip">This month</span>
+        </div>
+        <div id="topTexters" class="texter-list"></div>
+      </article>
+
+      <article class="panel span-2">
+        <div class="panel-head">
+          <div><p class="eyebrow">SPORTS</p><h2>Teams & season activity</h2></div>
+          <button class="button secondary compact" id="addTeamBtn">+ Add test team</button>
+        </div>
+        <div id="teamGrid" class="team-grid"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div><p class="eyebrow">ADMIN</p><h2>Access</h2></div>
+        </div>
+        <div id="adminList" class="admin-list"></div>
+        <button class="button secondary full" id="supportBtn">Request temporary support view</button>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <div><p class="eyebrow">ACTIVITY</p><h2>Audit trail</h2></div>
+        </div>
+        <div id="auditList" class="audit-list"></div>
+      </article>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/platform-lab/app.js"></script>
+</body>
+</html>
