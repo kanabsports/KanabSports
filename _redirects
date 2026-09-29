@@ -1,5 +1,7 @@
-/team.html /team 302
-/team /team/index.html 200
-/team/ /team/index.html 200
-/britt /britt.html 200
+/family /family/index.html 200
+/family/ /family/index.html 200
 /team/britt /team/britt.html 200
+/britt /britt.html 200
+/team.html /family/ 301
+/team /family/ 301
+/team/ /family/ 301
