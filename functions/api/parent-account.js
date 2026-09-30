@@ -65,8 +65,8 @@ export async function onRequest({request,env}){
    const entries=Array.isArray(body.entries)?body.entries:[];
    if(entries.length>20)return json({error:'Too many team entries.'},400);
    const clean=entries.map((x,i)=>({entry_id:cleanName(x.entry_id||`entry-${i}`,80),team_code:cleanName(x.team_code,32).toUpperCase(),child_name:cleanName(x.child_name,60),created:Number(x.created)||Date.now()})).filter(x=>x.entry_id&&x.team_code);
-   await db.prepare('DELETE FROM parent_family WHERE email=?').bind(ses.email).run();
-   if(clean.length)await db.batch(clean.map(x=>db.prepare('INSERT INTO parent_family (email,entry_id,team_code,child_name,created) VALUES (?,?,?,?,?)').bind(ses.email,x.entry_id,x.team_code,x.child_name,x.created)));
+   if(new Set(clean.map(x=>x.entry_id)).size!==clean.length)return json({error:'Duplicate team entries.'},400);
+   await db.batch([db.prepare('DELETE FROM parent_family WHERE email=?').bind(ses.email),...clean.map(x=>db.prepare('INSERT INTO parent_family (email,entry_id,team_code,child_name,created) VALUES (?,?,?,?,?)').bind(ses.email,x.entry_id,x.team_code,x.child_name,x.created))]);
    return json({success:true,count:clean.length});
   }
   if(body.action==='update_name'){

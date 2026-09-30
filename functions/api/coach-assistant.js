@@ -1,3 +1,5 @@
+import {authorized,sameOrigin} from '../_lib/pilot.js';
+import {teamPlayer} from '../../assets/team-d-data.js';
 const SCHEDULE=[
  {date:'Mon, Sep 21',time:'6:45 PM',opponent:'Team C',coach:'Tami Van Dyke'},
  {date:'Mon, Sep 28',time:'6:45 PM',opponent:'Team B',coach:'Rhees Jackson'},
@@ -7,21 +9,23 @@ const SCHEDULE=[
  {date:'Mon, Nov 2',time:'6:45 PM',opponent:'Team A',coach:'Amber Hooper'}
 ];
 export async function onRequestPost({request,env}){
+ if(!sameOrigin(request)||!await authorized(request,env.SPORTS_DB))return json({success:false,error:'Sign in with an approved coach account.'},403);
  if(!env.SPORTS_DB)return json({success:false,error:'Database unavailable'},503);
  const {message}=await request.json(); const q=String(message||'').trim();
  if(!q)return json({success:false,error:'Ask a question first'},400);
  await schema(env.SPORTS_DB);
  const roster=(await env.SPORTS_DB.prepare("SELECT grade,player_name,parent_name,phone,jersey,sms_status FROM britt_team_roster ORDER BY player_name").all()).results||[];
+ const teamRoster=roster.filter(x=>teamPlayer(x.player_name));
  const low=q.toLowerCase();
  if(/text|message|tell everyone|remind everyone|send/.test(low)){
-   const enrolled=roster.filter(x=>String(x.sms_status).toLowerCase()==='enrolled').length;
+   const enrolled=teamRoster.filter(x=>String(x.sms_status).toLowerCase()==='enrolled').length;
    return json({success:true,type:'text_preview',answer:'I can prepare that team text. I will never send it without a coach confirming first.',draft:cleanDraft(q),recipients:enrolled});
  }
  if(/not enrolled|hasn.?t enrolled|who.*enrolled/.test(low)){
-   const names=roster.filter(x=>String(x.sms_status).toLowerCase()!=='enrolled').map(x=>x.player_name);
+   const names=teamRoster.filter(x=>String(x.sms_status).toLowerCase()!=='enrolled').map(x=>x.player_name);
    return json({success:true,type:'answer',answer:names.length?names.join(', ')+' are not enrolled in team texts yet.':'Everyone on the roster is enrolled in team texts.'});
  }
- const person=roster.find(x=>low.includes(x.player_name.toLowerCase())||x.parent_name&&low.includes(x.parent_name.toLowerCase()));
+ const person=teamRoster.find(x=>low.includes(x.player_name.toLowerCase())||x.parent_name&&low.includes(x.parent_name.toLowerCase()));
  if(person)return json({success:true,type:'answer',answer:person.player_name+': parent/guardian '+(person.parent_name||'not provided')+', phone '+(person.phone||'not provided')+', jersey '+(person.jersey||'not provided')+', team texts '+person.sms_status+'.'});
  if(/schedule|when|game|play/.test(low)){
    const team=SCHEDULE.find(x=>low.includes(x.opponent.toLowerCase())||low.includes(x.coach.toLowerCase()));

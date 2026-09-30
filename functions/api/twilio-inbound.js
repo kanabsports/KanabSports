@@ -1,6 +1,9 @@
+import {authorized} from '../_lib/pilot.js';
 const TEAM='britt-soccer';
 const PLAYERS=['Logan Welch','Verity Henke','Lennon Brown','Kelby Wheeler','Nora LeFevre','Harper Penney','Grai Reese','Carter Bunting','Yotam Binyamini','Finn Roth','Bryson Palmer'];
 export async function onRequestPost({request,env}){
+ if(!env.TWILIO_AUTH_TOKEN)return new Response('Text enrollment is not configured.',{status:503});
+ if(!await validSignature(request,env.TWILIO_AUTH_TOKEN))return new Response('Invalid signature.',{status:403});
  if(!env.SPORTS_DB)return xml('Kanab Sports enrollment is temporarily unavailable.');
  await schema(env.SPORTS_DB);
  const form=await request.formData(),from=String(form.get('From')||'').trim(),body=String(form.get('Body')||'').trim();
@@ -12,10 +15,11 @@ export async function onRequestPost({request,env}){
    await env.SPORTS_DB.prepare("UPDATE sms_enrollment SET status='opted_out',opted_out_at=datetime('now'),updated_at=datetime('now') WHERE phone=? AND team=?").bind(from,TEAM).run();
    return xml('Kanab Sports: You are unsubscribed from team texts. Reply JOIN if you want to enroll again.');
  }
- if(upper==='JOIN'||!row){
+ if(upper==='JOIN'||upper==='START'){
    await env.SPORTS_DB.prepare("INSERT INTO sms_enrollment(phone,team,status,step,consent_started_at,consented_at,updated_at) VALUES(?,?,'consented','guardian',datetime('now'),datetime('now'),datetime('now')) ON CONFLICT(phone,team) DO UPDATE SET status='consented',step='guardian',guardian_name=NULL,player_name=NULL,player_match=NULL,match_status=NULL,consent_started_at=datetime('now'),consented_at=datetime('now'),opted_out_at=NULL,updated_at=datetime('now')").bind(from,TEAM).run();
    return xml('Kanab Sports: You are now enrolled in recurring Team D notifications for practices, games, schedule changes, cancellations and team announcements. Message frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out. Privacy: kanabsports.com/privacy Terms: kanabsports.com/terms What is your full parent/guardian name?');
  }
+ if(!row||row.status==='opted_out')return xml('To join Kanab Sports Team D texts, reply JOIN. Reply HELP for help.');
  if(row.step==='guardian'){
    if(body.length<3)return xml('Please reply with the parent/guardian full name (first and last name).');
    await env.SPORTS_DB.prepare("UPDATE sms_enrollment SET guardian_name=?,step='player',updated_at=datetime('now') WHERE phone=? AND team=?").bind(body,from,TEAM).run();
@@ -33,6 +37,7 @@ export async function onRequestPost({request,env}){
  return xml('Kanab Sports: Your team-text enrollment is active. Reply HELP for help or STOP to opt out.');
 }
 export async function onRequestGet({request,env}){
+ if(!await authorized(request,env.SPORTS_DB))return json({error:'Approved coach sign-in required.'},401);
  if(!env.SPORTS_DB)return json({success:false},503);
  const u=new URL(request.url),phone=u.searchParams.get('phone');
  if(!phone)return json({success:false,error:'phone required'},400);
@@ -49,3 +54,13 @@ function norm(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 async function schema(db){await db.prepare("CREATE TABLE IF NOT EXISTS sms_enrollment(id INTEGER PRIMARY KEY AUTOINCREMENT,phone TEXT NOT NULL,team TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',step TEXT NOT NULL DEFAULT 'confirm',guardian_name TEXT,player_name TEXT,player_match TEXT,match_status TEXT,consent_started_at TEXT,consented_at TEXT,completed_at TEXT,opted_out_at TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(phone,team))").run()}
 function xml(message){const esc=String(message).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');return new Response('<?xml version="1.0" encoding="UTF-8"?><Response><Message>'+esc+'</Message></Response>',{headers:{'Content-Type':'text/xml; charset=utf-8','Cache-Control':'no-store'}})}
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
+
+async function validSignature(request,token){
+ try{
+ const signature=request.headers.get('X-Twilio-Signature');if(!signature||!request.headers.get('Content-Type')?.includes('application/x-www-form-urlencoded'))return false;
+ const params=await request.clone().formData();let payload=request.url;
+ for(const key of [...new Set(params.keys())].sort())for(const value of [...new Set(params.getAll(key).map(String))].sort())payload+=key+value;
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(token),{name:'HMAC',hash:'SHA-1'},false,['verify']);
+ return await crypto.subtle.verify('HMAC',key,Uint8Array.from(atob(signature),c=>c.charCodeAt(0)),new TextEncoder().encode(payload));
+ }catch{return false;}
+}
