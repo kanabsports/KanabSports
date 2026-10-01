@@ -71,10 +71,19 @@ footer{padding:26px 0 40px;color:#6f737b;font-size:12px;text-align:center}
   .hero-grid,.mockups{grid-template-columns:1fr}.benefits{grid-template-columns:1fr}.term-grid{grid-template-columns:1fr 1fr}
   .lockup{align-items:flex-start;flex-direction:column;margin-bottom:34px}h1{letter-spacing:-2px}.hero{padding-top:38px}
 }
+@media print{
+      .private,.printbar,.links{display:none!important}
+      body{background:#fff}
+      .hero{background:#111318!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .section,.exclusive,.terms,.card,.mock{break-inside:avoid}
+    }
 </style>
 </head>
 <body>
 <div class="private"><b>Private partnership preview</b> · Prepared for Honey's Marketplace · Concept only</div>
+<div class="printbar" style="background:#fff;border-bottom:1px solid #dedfe3;padding:10px 16px;text-align:center">
+  <button onclick="window.print()" style="border:0;border-radius:9px;background:#111318;color:#fff;padding:10px 14px;font:700 14px Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer">Print / Save as PDF</button>
+</div>
 <section class="hero">
   <div class="wrap">
     <div class="lockup">
