@@ -107,30 +107,18 @@ golfData.events.filter(e=>e[1]>=today).forEach(e=>events.push({date:e[0],team:'g
 return events.sort((a,b)=>a.date.localeCompare(b.date))[0]||null
 }
 const PARENT_TEAMS_KEY='kanabSportsParentTeamsV1';
-const parentTeamRegistry={
- 'TEAM-D':{name:'Team D Soccer',sport:'Youth Soccer',url:'/team/britt/',events:[
-  {date:'2026-09-28',time:'6:45 PM',title:'vs Team B',detail:'Rhees Jackson'},
-  {date:'2026-10-05',time:'6:45 PM',title:'vs Team A',detail:'Amber Hooper'},
-  {date:'2026-10-12',time:'6:45 PM',title:'vs Team C',detail:'Tami Van Dyke'},
-  {date:'2026-10-26',time:'6:00 PM',title:'vs Team B',detail:'Rhees Jackson'},
-  {date:'2026-11-02',time:'6:45 PM',title:'vs Team A',detail:'Amber Hooper'}
- ]}
-};
 function readParentTeams(){try{const v=JSON.parse(localStorage.getItem(PARENT_TEAMS_KEY)||'[]');return Array.isArray(v)?v:[]}catch{return []}}
 function renderParentHome(){
- const saved=readParentTeams().filter(x=>parentTeamRegistry[x.code]),count=saved.length;
+ const count=readParentTeams().filter(x=>x&&typeof x.code==='string'&&x.code.trim()).length;
  const header=document.getElementById('headerMyTeams'),countEl=document.getElementById('headerTeamCount'),hero=document.getElementById('heroMyTeams');
- if(header){header.classList.toggle('has-teams',count>0);header.setAttribute('aria-label',count?('Open My Teams, '+count+' saved'):'Find or add my teams')}
+ if(header){header.classList.toggle('has-teams',count>0);header.setAttribute('aria-label',count?('Open My Family, '+count+' saved teams'):'Find or add my teams')}
  if(countEl)countEl.textContent=String(count);
- if(hero)hero.textContent=count?('Open My Teams · '+count):'Find / Add My Team';
- 
+ if(hero)hero.textContent=count?'Open My Family':'Find / Add My Team';
  const label=document.getElementById('homeParentLabel'),title=document.getElementById('homeParentTitle'),detail=document.getElementById('homeParentDetail'),action=document.getElementById('homeParentAction');
- if(!count){if(label)label.textContent='Parent & Team Hub';if(title)title.textContent='Where’s my team?';if(detail)detail.textContent='Add a team once, then Kanab Sports keeps it easy to find from here.';if(action)action.textContent='Find / add my team →';return}
- const first=saved[0],team=parentTeamRegistry[first.code],today=scheduleToday(),next=team.events.find(e=>e.date>=today);
- if(label)label.textContent='My Teams · '+count+' saved';
- if(title)title.textContent=(first.child?first.child+' · ':'')+team.name;
- if(detail)detail.textContent=next?(date(next.date)+' · '+next.time+' · '+next.title+(next.detail?' · '+next.detail:'')):'No upcoming event posted yet.';
- if(action)action.textContent=count>1?'Open all my teams →':'Open my team →';
+ if(label)label.textContent='Parent & Team Hub';
+ if(title)title.textContent=count?'My Family':'Where’s my team?';
+ if(detail)detail.textContent=count?'Open your family portal for team schedules, coach messages and updates.':'Add a team once, then Kanab Sports keeps it easy to find from here.';
+ if(action)action.textContent=count?'Open My Family →':'Find / add my team →';
 }
 function renderHomeUtility(){
 renderParentHome();
