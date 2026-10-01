@@ -8,6 +8,12 @@ export async function onRequestPost({request,env}){
  await schema(env.SPORTS_DB);
  const form=await request.formData(),from=String(form.get('From')||'').trim(),body=String(form.get('Body')||'').trim();
  if(!from)return xml('Kanab Sports could not identify your phone number.');
+ // Store routing identifiers only from a signature-verified Twilio request.
+ const accountSid=String(form.get('AccountSid')||''),serviceSid=String(form.get('MessagingServiceSid')||'');
+ if(/^AC[a-f0-9]{32}$/i.test(accountSid)&&/^MG[a-f0-9]{32}$/i.test(serviceSid)){
+ await env.SPORTS_DB.prepare('CREATE TABLE IF NOT EXISTS team_d_settings (key TEXT PRIMARY KEY,value TEXT NOT NULL)').run();
+ await env.SPORTS_DB.batch([['twilio_account_sid',accountSid],['twilio_service_sid',serviceSid]].map(([key,value])=>env.SPORTS_DB.prepare('INSERT INTO team_d_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key,value)));
+ }
  let row=await env.SPORTS_DB.prepare('SELECT * FROM sms_enrollment WHERE phone=? AND team=?').bind(from,TEAM).first();
  const upper=body.toUpperCase();
  if(upper==='HELP')return xml('Kanab Sports team texts help: team practices, games, changes and announcements. Reply STOP to opt out. Visit kanabsports.com/team/britt/ or contact your coach.');
