@@ -40,7 +40,7 @@
 #latestWinDialog>*:not(.win-confetti){position:relative;z-index:1}
 #latestWinDialog h2{font-size:clamp(30px,8.2vw,48px);line-height:1;margin:22px 0 14px;font-weight:950;letter-spacing:-1.5px}
 #latestWinDialog .win-wordmark{display:flex;justify-content:center;align-items:center;gap:.015em;white-space:nowrap;color:#fff}
-#latestWinDialog .win-ball{display:inline-block;width:.77em;height:.77em;flex:0 0 .77em;margin:0 .015em;filter:drop-shadow(0 2px 3px #0004)}
+#latestWinDialog .win-ball{display:inline-flex;align-items:center;justify-content:center;width:.9em;height:1em;flex:0 0 .9em;margin:0 .015em;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif;font-size:.85em;line-height:1;letter-spacing:0}
 #latestWinDialog .win-shout{display:block;color:#ff4050;font-size:1.65em;letter-spacing:-2px;margin-top:8px}
 #latestWinDialog .win-date{color:#c7cad1;font-size:11px;line-height:1.6;letter-spacing:1.3px;font-weight:750;margin:0}
 #latestWinDialog .win-match{font-size:17px;font-weight:750;margin:18px 0 0}
@@ -269,7 +269,7 @@ document.getElementById('latestWinContinue').onclick=()=>winDialog.close();
 winDialog.addEventListener('close',()=>{clearTimeout(winExpiryTimer);winDialog.querySelector('.win-confetti').replaceChildren();});
 function celebrationTime(w){const raw=w.finalAt||w.publishedAt;return typeof raw==='string'&&/(?:Z|[+-]\d{2}:\d{2})$/.test(raw)?Date.parse(raw):NaN;}
 function celebrationActive(w,now=Date.now()){const age=now-celebrationTime(w);return Number.isFinite(age)&&age>=0&&age<CELEBRATION_MS;}
-function winWordmark(w){const line=document.createElement('span');line.className='win-wordmark';line.setAttribute('aria-hidden','true');for(const letter of w.team.toUpperCase()){if(letter==='O'&&w.sport.toLowerCase()==='volleyball'){const ball=document.createElementNS('http://www.w3.org/2000/svg','svg');ball.setAttribute('viewBox','0 0 64 64');ball.setAttribute('class','win-ball');ball.innerHTML='<circle cx="32" cy="32" r="30" fill="#fff"/><g fill="none" stroke="#626873" stroke-width="2.5" stroke-linecap="round"><path d="M32 2C24 14 25 25 32 32C46 32 55 25 60 21M32 32C24 43 24 54 30 62M17 6C11 20 16 35 26 42M5 19C5 35 12 46 24 49M43 4C35 11 31 21 32 32M59 43C44 46 34 41 27 34M50 56C37 55 29 49 26 42"/></g><circle cx="32" cy="32" r="30" fill="none" stroke="#dfe2e7" stroke-width="2"/>';line.append(ball);}else line.append(document.createTextNode(letter));}return line;}
+function winWordmark(w){const line=document.createElement('span');line.className='win-wordmark';line.setAttribute('aria-hidden','true');for(const letter of w.team.toUpperCase()){if(letter==='O'&&w.sport.toLowerCase()==='volleyball'){const ball=document.createElement('span');ball.className='win-ball';ball.textContent='🏐';line.append(ball);}else line.append(document.createTextNode(letter));}return line;}
 function applyPublishedWin(w){
  if(!w||typeof w.id!=='string'||typeof w.sport!=='string'||typeof w.team!=='string'||typeof w.opponent!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(w.date)||!Number.isFinite(w.teamScore)||!Number.isFinite(w.opponentScore)||w.opponentScore<0||w.teamScore<=w.opponentScore||!Number.isFinite(Date.parse(w.publishedAt))||Date.parse(w.publishedAt)>Date.now())return;
  const candidates=teams.filter(t=>t.sport.toLowerCase()===w.sport.toLowerCase());
