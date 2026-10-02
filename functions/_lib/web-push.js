@@ -12,5 +12,19 @@ export function validEndpoint(value){try{const u=new URL(value);return value.len
 export async function sendPush(db,device){if(!validEndpoint(device.endpoint))return 'invalid';const key=await keys(db),header=b64(bytes.encode(JSON.stringify({typ:'JWT',alg:'ES256'}))),claims=b64(bytes.encode(JSON.stringify({aud:new URL(device.endpoint).origin,exp:Math.floor(Date.now()/1000)+3600,sub:'mailto:howdy@kanabsports.com'}))),input=header+'.'+claims;const privateKey=await crypto.subtle.importKey('jwk',key.privateKey,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);const signature=b64(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},privateKey,bytes.encode(input)));
  // No payload: notification text is generic and provided by our service worker.
  const response=await fetch(device.endpoint,{method:'POST',headers:{Authorization:`vapid t=${input}.${signature}, k=${key.publicKey}`,TTL:'3600',Urgency:'normal'},redirect:'error',signal:AbortSignal.timeout(10000)});
+ await response.body?.cancel();
  if([404,410].includes(response.status)){await db.prepare('DELETE FROM push_devices WHERE id=?').bind(device.id).run();return 'expired';}return response.ok?'accepted':'rejected';}
-export async function notifyTeam(db,code,messageId){await pushSchema(db);const rows=(await db.prepare('SELECT id,endpoint,codes FROM push_devices').all()).results||[];const totals={accepted:0,failed:0};for(const device of rows){if(!JSON.parse(device.codes).includes(code))continue;const claim=await db.prepare("INSERT OR IGNORE INTO push_attempts(message_id,device_id,status,created) VALUES(?,?,'sending',?) RETURNING device_id").bind(messageId,device.id,Date.now()).first();if(!claim)continue;let status='unknown';try{status=await sendPush(db,device);}catch{}await db.prepare('UPDATE push_attempts SET status=? WHERE message_id=? AND device_id=?').bind(status,messageId,device.id).run();totals[status==='accepted'?'accepted':'failed']++;}return totals;}
+export async function notifyTeam(db,code,messageId){
+ await pushSchema(db);
+ const rows=((await db.prepare('SELECT id,endpoint,codes FROM push_devices').all()).results||[]).filter(device=>JSON.parse(device.codes).includes(code));
+ const totals={accepted:0,failed:0};
+ const send=async device=>{
+  const claim=await db.prepare("INSERT OR IGNORE INTO push_attempts(message_id,device_id,status,created) VALUES(?,?,'sending',?) RETURNING device_id").bind(messageId,device.id,Date.now()).first();
+  if(!claim)return;
+  let status='unknown';try{status=await sendPush(db,device);}catch{}
+  await db.prepare('UPDATE push_attempts SET status=? WHERE message_id=? AND device_id=?').bind(status,messageId,device.id).run();
+  totals[status==='accepted'?'accepted':'failed']++;
+ };
+ for(let i=0;i<rows.length;i+=5)await Promise.allSettled(rows.slice(i,i+5).map(send));
+ return totals;
+}
