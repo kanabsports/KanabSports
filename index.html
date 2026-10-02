@@ -286,7 +286,7 @@ function applyPublishedWin(w){
  for(const raw of [w.maxprepsUrl,w.hudlUrl]){try{const url=new URL(raw);if(url.protocol==='https:'&&['www.maxpreps.com','maxpreps.com','fan.hudl.com'].includes(url.hostname)){link.href=url.href;link.hidden=false;break}}catch{}}
  shownWinId=w.id;winDialog.showModal();document.getElementById('latestWinContinue').focus({preventScroll:true});
  winExpiryTimer=setTimeout(()=>{if(winDialog.open)winDialog.close();},Math.max(0,celebrationTime(w)+CELEBRATION_MS-Date.now()));
- if(!matchMedia('(prefers-reduced-motion: reduce)').matches){const confetti=winDialog.querySelector('.win-confetti');for(let i=0;i<18;i++){const bit=document.createElement('i');bit.style.setProperty('--left',(i%2?90+Math.random()*8:2+Math.random()*8)+'%');bit.style.setProperty('--delay',Math.random()+'s');bit.style.setProperty('--color',['#ef3340','#fff','#edc659'][i%3]);confetti.append(bit)}}
+ if(!matchMedia('(prefers-reduced-motion: reduce)').matches){const confetti=winDialog.querySelector('.win-confetti');for(let i=0;i<24;i++){const bit=document.createElement('i');bit.style.setProperty('--left',(i%2?90+Math.random()*8:2+Math.random()*8)+'%');bit.style.setProperty('--delay',Math.random()+'s');bit.style.setProperty('--color',['#ef3340','#fff','#edc659'][i%3]);confetti.append(bit)}}
 }
 async function loadPublishedWin(){if(winRequestPending||document.hidden)return;winRequestPending=true;try{const response=await fetch('/assets/latest-win.json',{cache:'no-store'});if(response.ok)applyPublishedWin(await response.json())}catch{}finally{winRequestPending=false}}
 loadPublishedWin();setInterval(loadPublishedWin,60000);
