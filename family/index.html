@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="Kanab Sports My Family — free parent dashboard for local team schedules, coach updates, and multiple kids in one place.">
-<meta name="theme-color" content="#0b0c0f">
+<meta name="theme-color" content="#0b0c0f"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/assets/kanab-sports-icon.png"><meta name="apple-mobile-web-app-capable" content="yes">
 <title>My Family · Kanab Sports</title>
 <style>
 [hidden]{display:none!important}
@@ -23,11 +23,11 @@
 
 <div class="wrap dashboard">
 <nav class="rail" aria-label="Parent portal"><span class="rail-label">My Family</span><button class="active" data-pane="home">Home</button><button data-pane="schedule">Schedule</button><button data-pane="messages">Updates <span class="nav-badge" id="updatesBadge" hidden>0</span></button><button data-pane="teams">Teams</button></nav>
-<main class="main"><nav id="connectionTabs" class="child-chips" aria-label="School and recreation" style="margin:0 0 18px" hidden></nav>
-<section class="pane" id="pane-home">
+<main class="main"><nav id="connectionTabs" class="child-chips" role="tablist" aria-label="School and recreation" style="margin:0 0 18px" hidden></nav>
+<section class="pane" id="pane-home"><section id="connectionSummary" class="panel connection-summary" aria-live="polite"></section>
 <div class="welcome"><div><div class="eyebrow">MY FAMILY</div><h2 id="welcomeTitle">Your sports, simplified.</h2><div class="child-chips" id="childChips"></div></div><div class="team-actions"><button class="btn primary small" data-open-add>Enter Codes</button><button class="btn ghost small" id="manageFamily">Manage Family</button></div></div>
 <section class="panel setup" id="setupGuide"><div class="panel-head"><div><div class="eyebrow">FIRST TIME HERE?</div><h3>Setup takes about a minute.</h3></div></div><div class="setup-grid"><div class="setup-step"><span class="step-num">1</span><strong>Connect school or rec</strong><p>Enter a school code, a rec code, or both. You only need the ones your family uses.</p></div><div class="setup-step"><span class="step-num">2</span><strong>Label it if helpful</strong><p>Nickname, initials, Kid 1 — or leave it blank. No child name is required.</p></div><div class="setup-step"><span class="step-num">3</span><strong>Save My Family</strong><p>Create a free passwordless account if you want this setup on another device.</p></div></div></section>
-<section class="panel home-updates" id="homeUpdatesPanel" style="margin-top:14px"><div class="panel-head"><div><div class="eyebrow">UPDATES</div><h3>Important updates</h3></div><button class="btn ghost small" data-go="messages">All Updates</button></div><div id="homeUpdates"></div></section>
+<section class="panel" id="pushPanel"></section><section class="panel home-updates" id="homeUpdatesPanel" style="margin-top:14px"><div class="panel-head"><div><div class="eyebrow">UPDATES</div><h3>Important updates</h3></div><button class="btn ghost small" data-go="messages">All Updates</button></div><div id="homeUpdates"></div></section>
 <div class="family-grid" style="margin-top:14px"><section class="panel"><div class="panel-head"><div><div class="eyebrow">FAMILY SCHEDULE</div><h3>Next up</h3></div><button class="btn ghost small" data-go="schedule">All events</button></div><div id="homeSchedule" class="schedule-list"></div></section><aside class="home-details"><section class="panel"><div class="panel-head"><div><div class="eyebrow">YOUR TEAMS</div><h3>Team information</h3></div><button class="btn ghost small" id="addTeamSide">+ Add</button></div><div id="homeTeams" class="team-stack"></div></section><section class="panel"><div class="eyebrow">YOUR COACHES</div><h3>Who’s in charge?</h3><div id="coachList" class="coach-list" style="margin-top:12px"></div></section></aside></div>
 </section>
 
@@ -50,18 +50,19 @@
 <div class="undo" id="undo" hidden><span>Team removed.</span><button id="undoBtn">Undo</button></div>
 
 <script type="module">
+import {mountPush} from "/assets/family-push.js";
 import {CONNECTIONS,categoryLabel,eventSort,timeMinutes} from "/assets/family-connections.js";
 (()=>{'use strict';
 const KEY='kanabSportsParentTeamsV1',TRASH='kanabSportsParentTrashV1',PROFILE='kanabSportsParentProfileV1';
 const registry=structuredClone(CONNECTIONS);
-let feedError='',feedLoaded=false,activePane='home',activeCategory='',activeChild='';
+let feedError='',feedLoaded=false,activePane='home',activeCategory=sessionStorage.getItem('ksFamilyCategory')||'',activeChild='';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Denver',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 const md=d=>{const x=new Date(d+'T12:00:00');return {m:x.toLocaleDateString('en-US',{month:'short'}),d:x.getDate()}};
 const read=()=>{try{const x=JSON.parse(localStorage.getItem(KEY)||'[]');return Array.isArray(x)?x:[]}catch{return []}};
-const write=a=>{localStorage.setItem(KEY,JSON.stringify(a));render();syncFamily()};
+const write=a=>{localStorage.setItem(KEY,JSON.stringify(a));render();syncFamily();document.dispatchEvent(new Event('familyconnectionschanged'))};
 const profile=()=>{try{return JSON.parse(localStorage.getItem(PROFILE)||'{}')}catch{return {}}};
 let addMode='team';
 let account=null,challenge='',syncTimer=null,syncChain=Promise.resolve();
@@ -91,10 +92,17 @@ function render(filterChild=activeChild){
  const saved=normalized(read());saveNormalized(saved);chips();
  const categories=[...new Set(saved.map(x=>teamData(x)?.category).filter(Boolean))];
  if(activeCategory&&!categories.includes(activeCategory))activeCategory='';
- const tabs=$('connectionTabs');tabs.hidden=!categories.length;
- tabs.innerHTML='<button class="chip'+(!activeCategory?' active':'')+'" data-category="" aria-pressed="'+(!activeCategory)+'">All Sports</button>'+['school','rec'].filter(c=>categories.includes(c)).map(c=>'<button class="chip'+(activeCategory===c?' active':'')+'" data-category="'+c+'" aria-pressed="'+(activeCategory===c)+'">'+categoryLabel(c)+'</button>').join('');
+ const tabs=$('connectionTabs');tabs.hidden=!categories.length||['kids','settings'].includes(activePane);
+ const tabValues=['',...['school','rec'].filter(c=>categories.includes(c))];
+ if(tabs.dataset.categories!==tabValues.join('|')){tabs.dataset.categories=tabValues.join('|');tabs.innerHTML=tabValues.map(c=>'<button type="button" role="tab" class="chip" data-category="'+c+'">'+(c?categoryLabel(c):'All Sports')+'</button>').join('');}
+ tabs.querySelectorAll('[data-category]').forEach(b=>{const selected=b.dataset.category===activeCategory;b.classList.toggle('active',selected);b.setAttribute('aria-selected',String(selected));b.tabIndex=selected?0:-1;});
+ sessionStorage.setItem('ksFamilyCategory',activeCategory);
  const scope=saved.filter(x=>(!activeCategory||teamData(x)?.category===activeCategory)&&(!activeChild||x.child===activeChild));
  renderCalendar(scope);
+ const selected=scope.filter(x=>teamData(x)),names=[...new Set(selected.map(x=>teamData(x).name))];
+ $('connectionSummary').hidden=!categories.length;
+ $('connectionSummary').innerHTML='<div class="eyebrow">'+(activeCategory?categoryLabel(activeCategory)+' SPORTS':'ALL YOUR SPORTS')+'</div><h2 style="margin:6px 0">'+(activeCategory==='school'?'Your school hub.':activeCategory==='rec'?'Your rec hub.':(categories.length>1?'School + rec, together.':'Your sports, together.'))+'</h2><p class="muted">'+esc(names.join(' · ')||'No connections for this child in this view.')+'</p><p class="note">'+(activeCategory==='school'?'School games and published school information. Rec teams are hidden in this view.':activeCategory==='rec'?'Your rec team’s games, coach updates, and team information. School events are hidden in this view.':'Upcoming events and coach updates from your connected sports.')+'</p><div class="team-actions">'+[...new Map(selected.map(x=>[x.code,x])).values()].map(x=>'<a class="btn ghost small" href="'+esc(teamData(x).url)+'">Open '+esc(teamData(x).name)+'</a>').join('')+'</div>';
+
 
  const events=familyEvents(filterChild);
  $('setupGuide').hidden=saved.length>0;
@@ -116,7 +124,7 @@ function render(filterChild=activeChild){
  if(activePane==='messages'&&messages.length)localStorage.setItem('ksUpdatesSeen',String(messages[0].m.created));
  const unread=messages.filter(x=>x.m.created>Number(localStorage.getItem('ksUpdatesSeen')||0)).length;
  const badge=$('updatesBadge');if(badge){badge.hidden=!unread;badge.textContent=String(unread)}
- const name=account?.name||profile().name||'';$('welcomeTitle').textContent=name?'Hi '+name.split(' ')[0]+'. Here’s what’s next.':'Your sports, simplified.';
+ const name=account?.name||profile().name||'';$('welcomeTitle').textContent=activeCategory?(categoryLabel(activeCategory)+' · What’s next'):name?'Hi '+name.split(' ')[0]+'. Here’s what’s next.':'Your sports, simplified.';
  renderAccount();
 }
 function renderCalendar(saved){
@@ -133,7 +141,7 @@ function renderAccount(){
  $('syncCopy').innerHTML=signed?'<span class="status-good">Signed in as '+esc(account.email)+'</span><br>Your saved teams and kids are stored with your free parent account.':'Your current setup is saved only on this browser. Create a free parent account to sync it across devices. No password.';
  $('syncButton').textContent=signed?'Sign Out':'Create Free Account';
 }
-function go(name){activePane=name;if(name==='messages'){localStorage.setItem('ksUpdatesSeen',String(Date.now()));$('updatesBadge').hidden=true;}document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);document.querySelectorAll('.rail button[data-pane]').forEach(b=>{b.classList.toggle('active',b.dataset.pane===name);if(b.dataset.pane===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});window.scrollTo({top:0,behavior:'smooth'})}
+function go(name){activePane=name;$('connectionTabs').hidden=['kids','settings'].includes(name)||!read().some(x=>teamData(x));if(name==='messages'){localStorage.setItem('ksUpdatesSeen',String(Date.now()));$('updatesBadge').hidden=true;}document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);document.querySelectorAll('.rail button[data-pane]').forEach(b=>{b.classList.toggle('active',b.dataset.pane===name);if(b.dataset.pane===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});window.scrollTo({top:0,behavior:'smooth'})}
 function openAdd(prefill='',child=''){addMode='team';$('addPanel').querySelector('.eyebrow').textContent='SCHOOL & REC';$('addPanel').hidden=false;$('connectionFields').hidden=false;$('schoolCode').value='';$('teamCode').value=prefill;$('childLabel').value=child;$('addTitle').textContent='Connect your sports.';$('addTitle').nextElementSibling.textContent='Enter a school code, a rec code, or both. You only need the ones your family uses.';$('addForm').querySelector('[type=submit]').textContent='Save Connections';document.querySelector('.pilot').hidden=false;$('addStatus').textContent='';setTimeout(()=>$('schoolCode').focus(),20)}
 function openKid(){openAdd();addMode='kid';$('addPanel').querySelector('.eyebrow').textContent='ADD A KID';$('addTitle').textContent='Add a kid.';$('addTitle').nextElementSibling.textContent='Use a nickname, initials, or leave it blank. You can connect school or rec later.';$('connectionFields').hidden=true;$('addForm').querySelector('[type=submit]').textContent='Add Kid';document.querySelector('.pilot').hidden=true;setTimeout(()=>$('childLabel').focus(),25)}
 function addConnections(){
@@ -165,7 +173,7 @@ async function loadAccount(){
  const guest=owner?[]:normalized(read());const merged=[...remote];
  guest.forEach(r=>{if(!merged.some(x=>x.entryId===r.entryId||x.code===r.code&&x.child===r.child))merged.push(r)});
  const inviteEntry=normalized(read()).filter(x=>x.entryId===newInviteId);inviteEntry.forEach(r=>{if(!merged.some(x=>x.code===r.code&&x.child===r.child))merged.push(r)});
- saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);render();if(guest.length||inviteEntry.length)syncFamily();
+ saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);render();document.dispatchEvent(new Event('familyconnectionschanged'));if(guest.length||inviteEntry.length)syncFamily();
  }catch{$('saveStatus').textContent='Could not check your account. Your saved teams on this device are still available.';renderAccount()}
 }
 function syncFamily(){if(!account)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>{
@@ -174,7 +182,7 @@ function syncFamily(){if(!account)return;clearTimeout(syncTimer);syncTimer=setTi
  },350)}
 function openAccount(){$('accountPanel').hidden=false;$('accountStart').hidden=false;$('accountCodeWrap').hidden=true;$('accountStatus').textContent='';const p=profile();$('parentName').value=account?.name||p.name||'';$('parentEmail').value=account?.email||p.email||'';setTimeout(()=>$('parentName').focus(),20)}
 function closeAccount(){$('accountPanel').hidden=true;$('parentCode').value=''}
-document.querySelectorAll('.rail button[data-pane]').forEach(b=>b.onclick=()=>go(b.dataset.pane));
+document.querySelectorAll('.rail button[data-pane]').forEach(b=>b.onclick=()=>{if(b.dataset.pane==='home'){activeCategory='';render();}go(b.dataset.pane);});
 document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g){e.preventDefault();go(g.dataset.go)}});
 ['addTeamSide','addTeamTeams','addTeamSettings'].forEach(id=>$(id).onclick=()=>openAdd());
 $('addKidTop').onclick=openKid;
@@ -182,9 +190,10 @@ $('manageFamily').onclick=()=>go('kids');$('cancelAdd').onclick=closeAdd;$('addP
 $('addForm').onsubmit=e=>{e.preventDefault();if(addMode==='kid')addKid();else addConnections()};$('addPilot').onclick=()=>add('TEAM-D',$('childLabel').value);
 document.addEventListener('click',e=>{const kid=e.target.closest('[data-kid-team]');if(kid){openAdd('',kid.dataset.kidTeam);return;}if(e.target.closest('[data-open-add]'))openAdd();const sh=e.target.closest('[data-share]');if(sh)shareTeam(sh.dataset.share);const ed=e.target.closest('[data-edit]');if(ed)editChild(ed.dataset.edit);const rm=e.target.closest('[data-remove]');if(rm)removeTeam(rm.dataset.remove)});
 $('undoBtn').onclick=()=>{try{const x=JSON.parse(localStorage.getItem(TRASH)||'null');if(x&&x.expires>Date.now()){const a=normalized(read());if(!a.some(s=>s.entryId===x.removed.entryId))a.push(x.removed);write(a)}localStorage.removeItem(TRASH)}catch{}$('undo').hidden=true};
-$('connectionTabs').onclick=e=>{const b=e.target.closest('[data-category]');if(!b)return;activeCategory=b.dataset.category;render();};
+$('connectionTabs').onclick=e=>{const b=e.target.closest('[data-category]');if(!b)return;activeCategory=b.dataset.category;go('home');render();};
+$('connectionTabs').onkeydown=e=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...$('connectionTabs').querySelectorAll('[role=tab]')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].click();tabs[next].focus();};
 $('childChips').onclick=e=>{const b=e.target.closest('[data-child]');if(!b)return;$('childChips').querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));render(b.dataset.child)};
-$('accountPill').onclick=()=>account?go('settings'):openAccount();$('syncButton').onclick=async()=>{if(!account){openAccount();return}try{clearTimeout(syncTimer);await syncChain;await api({action:'logout'});account=null;localStorage.removeItem(KEY);localStorage.removeItem(PROFILE);localStorage.removeItem('ksFamilyOwner');render()}catch{}};
+$('accountPill').onclick=()=>account?go('settings'):openAccount();$('syncButton').onclick=async()=>{if(!account){openAccount();return}try{clearTimeout(syncTimer);await syncChain;await api({action:'logout'});account=null;localStorage.removeItem(KEY);localStorage.removeItem(PROFILE);localStorage.removeItem('ksFamilyOwner');render();document.dispatchEvent(new Event('familyconnectionschanged'))}catch{}};
 document.querySelectorAll('[data-close-account]').forEach(b=>b.onclick=closeAccount);$('accountPanel').onclick=e=>{if(e.target===$('accountPanel'))closeAccount()};
 $('accountForm').onsubmit=async e=>{e.preventDefault();$('accountStatus').textContent='';try{const name=$('parentName').value.trim(),email=$('parentEmail').value.trim();const d=await api({action:'request_code',name,email});challenge=d.challenge;localStorage.setItem(PROFILE,JSON.stringify({name,email}));$('accountStart').hidden=true;$('accountCodeWrap').hidden=false;$('codeSentText').textContent='We sent an 8-digit code to '+email+'. It expires in 10 minutes.';$('parentCode').focus()}catch(err){$('accountStatus').textContent=err.message}};
 $('backAccount').onclick=()=>{$('accountCodeWrap').hidden=true;$('accountStart').hidden=false;$('codeStatus').textContent=''};
@@ -192,7 +201,7 @@ $('codeForm').onsubmit=async e=>{e.preventDefault();$('codeStatus').textContent=
 let newInviteId='';
 const q=new URLSearchParams(location.search),invite=q.get('code');if(invite&&registry[invite.toUpperCase()]){const a=normalized(read()),child=q.get('child')||'';if(!a.some(x=>x.code===invite.toUpperCase()&&x.child===child)){newInviteId='entry-'+crypto.randomUUID();a.push({code:invite.toUpperCase(),child,addedAt:Date.now(),entryId:newInviteId});saveNormalized(a)}history.replaceState({},'',location.pathname)}
 async function loadFeed(){try{const r=await fetch('/api/team-workspace?view=public',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json();registry['TEAM-D'].events=d.team.events.map((e,i)=>({...e,id:'team-d-'+i}));registry['TEAM-D'].messages=d.announcements.map(m=>({...m,date:new Date(m.created).toLocaleString('en-US',{timeZone:'America/Denver',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}));feedLoaded=true;feedError='';}catch{feedError='Coach updates could not refresh. Please try again shortly.';}render();}
-render();loadAccount();loadFeed();setInterval(()=>{if(!document.hidden)loadFeed();},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadFeed();});
+render();loadAccount().then(()=>{mountPush($('pushPanel'),()=>normalized(read()).map(x=>x.code));if(q.get('view')==='messages'){activeCategory=q.get('category')==='rec'?'rec':'';render();go('messages');}});loadFeed();setInterval(()=>{if(!document.hidden)loadFeed();},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadFeed();});
 })();
 </script>
 </body>

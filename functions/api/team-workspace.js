@@ -1,3 +1,4 @@
+import {notifyTeam} from '../_lib/web-push.js';
 import {identity,json,schema,session,authorized,sameOrigin,limit,seedSignupRecords,notifyHead} from '../_lib/pilot.js';
 import {TEAM_D} from '../../assets/team-d-data.js';
 export async function onRequest({request,env,waitUntil}){
@@ -40,7 +41,8 @@ export async function onRequest({request,env,waitUntil}){
   const message=String(body.body||'').trim();if(!message||message.length>1200)return json({error:'Write an update of 1–1,200 characters.'},400);
   if(!await limit(db,`announcement:${member.id}:${Math.floor(Date.now()/60000)}`,5))return json({error:'Please wait a minute before posting another update.'},429);
   const id=crypto.randomUUID();await db.prepare('INSERT INTO team_d_announcements(id,author,body,created) VALUES(?,?,?,?)').bind(id,member.name,message,Date.now()).run();
-  return json({success:true,id,message:'Published to the team page and My Family. No text message was sent.'});
+  if(waitUntil)waitUntil(notifyTeam(db,'TEAM-D',id).catch(()=>{}));
+  return json({success:true,id,message:'Published to the team page and My Family. App notifications queued for opted-in devices. No SMS sent.'});
  }
  return json({error:'Unknown action.'},400);
  }catch{return json({error:'Could not load or save your team. Please try again.'},500);}
