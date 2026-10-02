@@ -25,7 +25,7 @@
 <nav class="rail" aria-label="Parent portal"><span class="rail-label">My Family</span><button class="active" data-pane="home">Home</button><button data-pane="schedule">Schedule</button><button data-pane="messages">Updates <span class="nav-badge" id="updatesBadge" hidden>0</span></button><button data-pane="teams">Teams</button></nav>
 <main class="main"><nav id="connectionTabs" class="child-chips" aria-label="School and recreation" style="margin:0 0 18px" hidden></nav>
 <section class="pane" id="pane-home">
-<div class="welcome"><div><div class="eyebrow">MY FAMILY</div><h2 id="welcomeTitle">Your sports, simplified.</h2><div class="child-chips" id="childChips"></div></div><button class="btn ghost small" id="manageFamily">Manage Family</button></div>
+<div class="welcome"><div><div class="eyebrow">MY FAMILY</div><h2 id="welcomeTitle">Your sports, simplified.</h2><div class="child-chips" id="childChips"></div></div><div class="team-actions"><button class="btn primary small" data-open-add>Enter Codes</button><button class="btn ghost small" id="manageFamily">Manage Family</button></div></div>
 <section class="panel setup" id="setupGuide"><div class="panel-head"><div><div class="eyebrow">FIRST TIME HERE?</div><h3>Setup takes about a minute.</h3></div></div><div class="setup-grid"><div class="setup-step"><span class="step-num">1</span><strong>Connect school or rec</strong><p>Enter a school code, a rec code, or both. You only need the ones your family uses.</p></div><div class="setup-step"><span class="step-num">2</span><strong>Label it if helpful</strong><p>Nickname, initials, Kid 1 — or leave it blank. No child name is required.</p></div><div class="setup-step"><span class="step-num">3</span><strong>Save My Family</strong><p>Create a free passwordless account if you want this setup on another device.</p></div></div></section>
 <section class="panel home-updates" id="homeUpdatesPanel" style="margin-top:14px"><div class="panel-head"><div><div class="eyebrow">UPDATES</div><h3>Important updates</h3></div><button class="btn ghost small" data-go="messages">All Updates</button></div><div id="homeUpdates"></div></section>
 <div class="family-grid" style="margin-top:14px"><section class="panel"><div class="panel-head"><div><div class="eyebrow">FAMILY SCHEDULE</div><h3>Next up</h3></div><button class="btn ghost small" data-go="schedule">All events</button></div><div id="homeSchedule" class="schedule-list"></div></section><aside class="home-details"><section class="panel"><div class="panel-head"><div><div class="eyebrow">YOUR TEAMS</div><h3>Team information</h3></div><button class="btn ghost small" id="addTeamSide">+ Add</button></div><div id="homeTeams" class="team-stack"></div></section><section class="panel"><div class="eyebrow">YOUR COACHES</div><h3>Who’s in charge?</h3><div id="coachList" class="coach-list" style="margin-top:12px"></div></section></aside></div>
@@ -50,7 +50,7 @@
 <div class="undo" id="undo" hidden><span>Team removed.</span><button id="undoBtn">Undo</button></div>
 
 <script type="module">
-import {CONNECTIONS,categoryLabel,eventSort} from "/assets/family-connections.js";
+import {CONNECTIONS,categoryLabel,eventSort,timeMinutes} from "/assets/family-connections.js";
 (()=>{'use strict';
 const KEY='kanabSportsParentTeamsV1',TRASH='kanabSportsParentTrashV1',PROFILE='kanabSportsParentProfileV1';
 const registry=structuredClone(CONNECTIONS);
@@ -68,7 +68,7 @@ let account=null,challenge='',syncTimer=null,syncChain=Promise.resolve();
 function normalized(a){return a.map((x,i)=>({code:String(x.code||'').toUpperCase(),child:String(x.child||''),addedAt:Number(x.addedAt)||Date.now(),entryId:x.entryId||('local-'+(Number(x.addedAt)||Date.now())+'-'+i)})).filter(x=>/^[A-Z0-9_-]{1,32}$/.test(x.code))}
 function saveNormalized(a){localStorage.setItem(KEY,JSON.stringify(normalized(a)))}
 function teamData(s){return registry[s.code]}
-function future(s){const t=teamData(s);return t?t.events.filter(e=>(e.endDate||e.date)>=today()):[]}
+function future(s){const t=teamData(s),date=today(),parts=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Denver',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()).split(':'),now=Number(parts[0])*60+Number(parts[1]);return t?t.events.filter(e=>(e.endDate||e.date)>date||(e.endDate||e.date)===date&&(e.endDate>e.date||timeMinutes(e.time)>=now)):[]}
 function familyEvents(filterChild=''){const rows=read().filter(s=>!activeCategory||teamData(s)?.category===activeCategory).flatMap(s=>future(s).map(e=>({s,t:teamData(s),e}))).filter(x=>!filterChild||x.s.child===filterChild);return [...new Map(rows.map(x=>[x.s.code+'|'+x.e.id+'|'+x.e.date+'|'+x.e.title,x])).values()].sort((a,b)=>eventSort(a.e,b.e))}
 function conflictMap(events){const m={};events.forEach(x=>{if(!/AM|PM/.test(x.e.time))return;const k=x.e.date+'|'+x.e.time;(m[k]||(m[k]=[])).push(x)});return m}
 function chips(){
