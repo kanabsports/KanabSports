@@ -1,13 +1,13 @@
 {
-  "id": "volleyball-2026-10-01-beaver",
+  "id": "volleyball-2026-10-02-bryce-valley",
   "sport": "Volleyball",
   "team": "Cowboys",
-  "opponent": "Beaver",
-  "teamScore": 3,
+  "opponent": "Bryce Valley",
+  "teamScore": 2,
   "opponentScore": 0,
-  "date": "2026-10-01",
-  "publishedAt": "2026-10-01T22:21:43-06:00",
+  "date": "2026-10-02",
+  "publishedAt": "2026-10-03T00:50:28Z",
   "level": "win",
-  "maxprepsUrl": "https://www.maxpreps.com/ut/volleyball/match/beaver-vs-kanab/10-1-2026/?c=7012a783-4dd7-4b80-9166-ae7928d7efd2",
+  "maxprepsUrl": "https://www.maxpreps.com/ut/volleyball/match/bryce-valley-tropic-vs-kanab/10-2-2026/?c=e5099e56-7aca-40bd-a618-7cb610094a37",
   "hudlUrl": "https://fan.hudl.com/usa/ut/kanab/organization/15658/kanab-high-school"
 }
