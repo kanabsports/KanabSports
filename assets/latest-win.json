@@ -1,13 +1,13 @@
 {
-  "id": "volleyball-2026-10-02-wayne",
-  "sport": "Volleyball",
+  "id": "football-2026-10-02-enterprise",
+  "sport": "Football",
   "team": "Cowboys",
-  "opponent": "Wayne",
-  "teamScore": 2,
-  "opponentScore": 0,
+  "opponent": "Enterprise",
+  "teamScore": 35,
+  "opponentScore": 14,
   "date": "2026-10-02",
-  "publishedAt": "2026-10-02T22:26:06-06:00",
+  "publishedAt": "2026-10-03T00:44:21-06:00",
   "level": "win",
-  "maxprepsUrl": "https://www.maxpreps.com/ut/volleyball/match/kanab-vs-wayne-bicknell/10-2-2026/?c=1dc49cae-5334-4b89-825b-8c3257f942e2",
+  "maxprepsUrl": "https://www.maxpreps.com/ut/football/game/enterprise-vs-kanab/10-2-2026/?c=10595b65-16e6-4839-bde9-32224f058d67",
   "hudlUrl": "https://fan.hudl.com/usa/ut/kanab/organization/15658/kanab-high-school"
 }
