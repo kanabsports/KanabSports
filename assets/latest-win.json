@@ -1,13 +1,13 @@
 {
-  "id": "football-2026-10-02-enterprise",
-  "sport": "Football",
-  "team": "Cowboys",
-  "opponent": "Enterprise",
-  "teamScore": 35,
-  "opponentScore": 14,
-  "date": "2026-10-02",
-  "publishedAt": "2026-10-03T00:44:21-06:00",
+  "id": "volleyball-2026-10-03-piute",
+  "sport": "Volleyball",
+  "team": "Cowgirls",
+  "opponent": "Piute",
+  "teamScore": 2,
+  "opponentScore": 0,
+  "date": "2026-10-03",
+  "publishedAt": "2026-10-03T23:12:06-06:00",
   "level": "win",
-  "maxprepsUrl": "https://www.maxpreps.com/ut/football/game/enterprise-vs-kanab/10-2-2026/?c=10595b65-16e6-4839-bde9-32224f058d67",
+  "maxprepsUrl": "https://www.maxpreps.com/ut/volleyball/match/kanab-vs-piute-junction/10-3-2026/?c=c6d7dac5-bc9b-4808-a305-07f0d29898d8",
   "hudlUrl": "https://fan.hudl.com/usa/ut/kanab/organization/15658/kanab-high-school"
 }
