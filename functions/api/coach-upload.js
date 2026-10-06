@@ -1,19 +1,31 @@
-const MAX_PDF_BYTES=5*1024*1024,ADMIN_EMAIL='howdy@kanabsports.com';
+import {getCoach,ensureCoachCore} from '../_lib/coach-auth.js';
+const MAX_FILE_BYTES=5*1024*1024,ADMIN_EMAIL='howdy@kanabsports.com';
 export async function onRequestPost({request,env}){
   if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({success:false,error:'Coach uploads are not configured yet.'},503);
   try{
     const form=await request.formData();if(clean(form.get('website'),100))return json({success:true,message:'Submitted.'});
-    await ensureSchema(env.SPORTS_DB);
-    const coachCode=clean(form.get('coach_code'),100).toUpperCase();if(!coachCode)return json({success:false,error:'Enter your coach access code.'},400);
-    const codeHash=await sha256Code(coachCode),approved=await env.SPORTS_DB.prepare(`SELECT id,name,email,sport,organization,team_name FROM coach_access_requests WHERE status='approved' AND access_code_hash=? LIMIT 1`).bind(codeHash).first();
-    if(!approved)return json({success:false,error:'That coach access code is not valid.'},403);
+    await ensureSchema(env.SPORTS_DB);await ensureCoachCore(env.SPORTS_DB);
+    let approved=await getCoach(request,env.SPORTS_DB);
+    if(!approved){
+      const coachCode=clean(form.get('coach_code'),100).toUpperCase();if(!coachCode)return json({success:false,error:'Sign in to your coach account or enter your backup access code.'},400);
+      const codeHash=await sha256Code(coachCode);approved=await env.SPORTS_DB.prepare(`SELECT id,name,email,sport,organization,team_name FROM coach_access_requests WHERE status='approved' AND access_code_hash=? LIMIT 1`).bind(codeHash).first();
+    }
+    if(!approved)return json({success:false,error:'Coach access is not valid.'},403);
     const name=clean(form.get('name'),120),email=clean(form.get('email'),180).toLowerCase(),sport=clean(form.get('sport'),120),team=clean(form.get('team'),180)||clean(approved.team_name||approved.organization,180),season=clean(form.get('season'),100),documentType=clean(form.get('document_type'),80)||'Roster and schedule',notes=clean(form.get('notes'),1500),scheduleGames=parseScheduleJson(form.get('schedule_json'));
     if(!name||!validEmail(email)||!sport||!team||!season)return json({success:false,error:'Please complete the coach, email, sport, team, and season.'},400);
     const scheduleUrl=cleanMaxPrepsUrl(form.get('schedule_url')),rosterUrl=cleanMaxPrepsUrl(form.get('roster_url'));
     if((form.get('schedule_url')&&!scheduleUrl)||(form.get('roster_url')&&!rosterUrl))return json({success:false,error:'MaxPreps links must be complete maxpreps.com URLs.'},400);
     const file=form.get('pdf'),hasFile=Boolean(file&&typeof file.arrayBuffer==='function'&&file.name);
-    let bytes=new Uint8Array(),filename='No PDF attached';
-    if(hasFile){if(file.size<5||file.size>MAX_PDF_BYTES)return json({success:false,error:'The PDF must be 5 MB or smaller.'},413);if(file.type&&file.type!=='application/pdf')return json({success:false,error:'Only PDF files are accepted.'},415);bytes=new Uint8Array(await file.arrayBuffer());if(String.fromCharCode(...bytes.subarray(0,5))!=='%PDF-')return json({success:false,error:'That file does not appear to be a valid PDF.'},415);filename=safeFilename(file.name)}
+    let bytes=new Uint8Array(),filename='No file attached',fileKind='';
+    if(hasFile){
+      if(file.size<1||file.size>MAX_FILE_BYTES)return json({success:false,error:'The schedule file must be 5 MB or smaller.'},413);
+      filename=safeFilename(file.name);const lower=filename.toLowerCase();
+      fileKind=lower.endsWith('.csv')?'csv':lower.endsWith('.pdf')?'pdf':'';
+      if(!fileKind)return json({success:false,error:'Upload a CSV or PDF schedule.'},415);
+      bytes=new Uint8Array(await file.arrayBuffer());
+      if(fileKind==='pdf'&&String.fromCharCode(...bytes.subarray(0,5))!=='%PDF-')return json({success:false,error:'That file does not appear to be a valid PDF.'},415);
+      if(fileKind==='csv'&&bytes.includes(0))return json({success:false,error:'That CSV does not appear to be a text file.'},415);
+    }
     const id=crypto.randomUUID(),reviewToken=randomToken(),reviewHash=await sha256Exact(reviewToken),reviewExpires=new Date(Date.now()+7*86400000).toISOString(),sourceNotes=[notes,scheduleUrl?`MaxPreps schedule: ${scheduleUrl}`:'',rosterUrl?`MaxPreps roster: ${rosterUrl}`:''].filter(Boolean).join('\n');
     await env.SPORTS_DB.prepare(`INSERT INTO coach_documents (id,verification_id,name,email,sport,team,document_type,season,notes,filename,byte_size,status,review_token_hash,review_expires_at,is_test,test_expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,0,NULL,datetime('now'))`).bind(id,approved.id,name,email,sport,team,documentType,season,sourceNotes,filename,bytes.byteLength,reviewHash,reviewExpires).run();
     if(scheduleGames.length){
@@ -23,7 +35,7 @@ export async function onRequestPost({request,env}){
           .bind(crypto.randomUUID(),approved.id,g.date,g.opponent,g.time||'',g.site||'',id).run();
       }
     }
-    const origin=new URL(request.url).origin,approve=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=approve`,reject=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=reject`,rows=[['Coach',name],['Email',email],['Sport',sport],['Team',team],['Season',season],['Information',documentType],['PDF',hasFile?filename:'Not attached'],['MaxPreps schedule',scheduleUrl],['MaxPreps roster',rosterUrl]].filter(([,v])=>v);
+    const origin=new URL(request.url).origin,approve=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=approve`,reject=`${origin}/review?token=${encodeURIComponent(reviewToken)}&action=reject`,rows=[['Coach',name],['Email',email],['Sport',sport],['Team',team],['Season',season],['Information',documentType],['Schedule file',hasFile?filename:'Not attached'],['MaxPreps schedule',scheduleUrl],['MaxPreps roster',rosterUrl]].filter(([,v])=>v);
     const text=`Coach submission received.\n\n${rows.map(([l,v])=>`${l}: ${v}`).join('\n')}${notes?`\n\nNotes: ${notes}`:''}\n\nApprove: ${approve}\nDeny: ${reject}`;
     const htmlRows=rows.map(([l,v])=>`<tr><td style="padding:6px 14px 6px 0;font-weight:700;vertical-align:top">${esc(l)}</td><td style="padding:6px 0;vertical-align:top">${/^https:\/\//.test(v)?`<a href="${esc(v)}">${esc(v)}</a>`:esc(v)}</td></tr>`).join(''),html=`<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:660px"><div style="font-size:12px;font-weight:800;color:#a51420;text-transform:uppercase">Coach submission</div><h2>${esc(team)} · ${esc(sport)}</h2><table style="border-collapse:collapse;margin:18px 0">${htmlRows}</table>${notes?`<div style="padding:14px;background:#f5f5f5;border-radius:8px"><strong>Notes</strong><br>${esc(notes)}</div>`:''}<div style="margin-top:24px"><a href="${esc(approve)}" style="display:block;background:#16833a;color:#fff;text-decoration:none;text-align:center;font-size:20px;font-weight:800;padding:18px 24px;border-radius:10px">✓ Approve</a><div style="margin-top:28px;text-align:center"><a href="${esc(reject)}" style="color:#9d2028;text-decoration:none;font-size:13px;font-weight:700;padding:10px 16px;border:1px solid #d8a8ab;border-radius:8px">Deny submission</a></div></div></div>`;
     const payload={from:'Kanab Sports <website@kanabsports.com>',to:[ADMIN_EMAIL],reply_to:email,subject:`Coach upload — ${team} — ${sport}`,text,html};if(hasFile)payload.attachments=[{filename,content:toBase64(bytes)}];
