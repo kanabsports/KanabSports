@@ -6,7 +6,7 @@ export async function getCoach(request,db){
   if(!token)return null;
   const hash=await sha256(token);
   return await db.prepare(`
-    SELECT a.id,a.name,a.email,a.phone,a.sport,a.organization,a.team_name,a.role,a.status
+    SELECT a.id,a.name,a.email,a.phone,a.sport,a.organization,a.team_name,a.team_code,a.role,a.status
     FROM coach_sessions s
     JOIN coach_access_requests a ON a.id=s.coach_id
     WHERE s.token_hash=? AND datetime(s.expires_at)>datetime('now') AND a.status='approved'
@@ -45,7 +45,8 @@ export async function ensureCoachCore(db){
     `ALTER TABLE coach_access_requests ADD COLUMN password_hash TEXT`,
     `ALTER TABLE coach_access_requests ADD COLUMN password_salt TEXT`,
     `ALTER TABLE coach_access_requests ADD COLUMN password_iterations INTEGER`,
-    `ALTER TABLE coach_access_requests ADD COLUMN team_name TEXT`
+    `ALTER TABLE coach_access_requests ADD COLUMN team_name TEXT`,
+    `ALTER TABLE coach_access_requests ADD COLUMN team_code TEXT`
   ])try{await db.prepare(q).run()}catch{}
   await db.prepare(`CREATE TABLE IF NOT EXISTS coach_sessions (
     id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,
