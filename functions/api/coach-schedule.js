@@ -41,7 +41,24 @@ export async function onRequestGet({request,env}){
 }
 
 async function storedGames(db,coachId){
-  return (await db.prepare(`SELECT id,date,opponent,time,site,result FROM coach_schedule_games WHERE coach_id=? ORDER BY date`).bind(coachId).all()).results||[];
+  try{
+    const latest=await db.prepare(`
+      SELECT g.source_document_id
+      FROM coach_schedule_games g
+      JOIN coach_documents c ON c.id=g.source_document_id
+      WHERE g.coach_id=? AND c.status='approved'
+      ORDER BY datetime(COALESCE(c.reviewed_at,c.created_at)) DESC
+      LIMIT 1
+    `).bind(coachId).first();
+    if(!latest?.source_document_id)return [];
+    return (await db.prepare(`
+      SELECT g.id,g.date,g.opponent,g.time,g.site,g.result
+      FROM coach_schedule_games g
+      JOIN coach_documents c ON c.id=g.source_document_id
+      WHERE g.coach_id=? AND g.source_document_id=? AND c.status='approved'
+      ORDER BY g.date
+    `).bind(coachId,latest.source_document_id).all()).results||[];
+  }catch{return []}
 }
 
 async function structuredDocumentGames(db,coachId){
