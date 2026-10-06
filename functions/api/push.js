@@ -4,7 +4,7 @@ export async function onRequest({request,env}){
  if(!env.SPORTS_DB)return json({error:'Notifications are temporarily unavailable.'},503);
  const db=env.SPORTS_DB;
  try{await pushSchema(db);
- if(request.method==='GET')return json({publicKey:(await keys(db)).publicKey,supportedCodes:['TEAM-D']});
+ if(request.method==='GET')return json({publicKey:(await keys(db)).publicKey,supportsTeamNotifications:true});
  if(request.method!=='POST')return json({error:'Method not allowed.'},405);
  if(new URL(request.url).origin!=='https://kanabsports.com'||request.headers.get('Origin')!=='https://kanabsports.com')return json({error:'Open Kanab Sports to manage notifications.'},403);
  if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'Invalid request.'},415);
@@ -15,7 +15,8 @@ export async function onRequest({request,env}){
  if(existing&&existing.token_hash!==tokenHash)return json({error:'This subscription belongs to a different device setup. Turn notifications off and enable them again.'},403);
  const hour=Math.floor(Date.now()/3600000),ip=await digest(request.headers.get('CF-Connecting-IP')||'unknown');const count=await db.prepare('INSERT INTO push_limits(key,count) VALUES(?,1) ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count').bind(ip+':'+hour).first();if(count.count>60)return json({error:'Please wait before trying again.'},429);
  if(body.action==='subscribe'){
-  const codes=[...new Set(Array.isArray(body.codes)?body.codes:[])];if(codes.length!==1||codes[0]!=='TEAM-D')return json({error:'Push is currently available for Team D coach updates.'},400);
+  const codes=[...new Set((Array.isArray(body.codes)?body.codes:[]).map(x=>String(x||'').trim().toUpperCase()))].filter(Boolean);
+  if(!codes.length||codes.length>25||codes.some(code=>!/^[A-Z0-9_-]{1,32}$/.test(code)))return json({error:'Choose between 1 and 25 valid team codes for notifications.'},400);
   await db.prepare('INSERT INTO push_devices(id,endpoint,token_hash,codes,updated) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET codes=excluded.codes,updated=excluded.updated WHERE push_devices.token_hash=excluded.token_hash').bind(id,body.endpoint,tokenHash,JSON.stringify(codes),Date.now()).run();
   const stored=await db.prepare('SELECT token_hash FROM push_devices WHERE id=?').bind(id).first();if(stored?.token_hash!==tokenHash)return json({error:'This subscription is already registered.'},409);
   return json({success:true});
