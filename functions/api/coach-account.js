@@ -29,10 +29,10 @@ export async function onRequestPost({request,env}){
     }
     if(action==='set_password'){
       const otp=clean(body.otp,12),password=String(body.password||'');if(password.length<10)return json({success:false,error:'Use at least 10 characters.'},400);
-      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return json({success:false,error:'Approved coach account not found.'},404);
+      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return json({success:false,error:'Approved coach account not found.'},404);
       const codeHash=await sha256(otp),row=await env.SPORTS_DB.prepare(`SELECT id FROM coach_login_otps WHERE coach_id=? AND code_hash=? AND datetime(expires_at)>datetime('now') LIMIT 1`).bind(coach.id,codeHash).first();if(!row)return json({success:false,error:'That verification code is invalid or expired.'},403);
       const salt=randomHex(16),iterations=60000,hash=await passwordHash(password,salt,iterations);await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET password_hash=?,password_salt=?,password_iterations=? WHERE id=?`).bind(hash,salt,iterations,coach.id).run();await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=?`).bind(coach.id).run();
-      return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Password saved. You are signed in.'});
+      return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Password saved. You are signed in.',firstSetup:!coach.password_hash});
     }
     if(action==='login'){
       const password=String(body.password||''),coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash,password_salt,password_iterations FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach||!coach.password_hash)return json({success:false,error:'No coach password is set for that email.'},403);
