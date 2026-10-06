@@ -29,7 +29,7 @@
         const ok=verified||signedIn||await run();if(!ok)return;
         const submitButton=document.getElementById('submitButton'),mainStatus=document.getElementById('coachStatus'),success=document.getElementById('coachSuccess');
         if(submitButton)submitButton.disabled=true;if(mainStatus)mainStatus.textContent='Sending…';success?.classList.remove('show');
-        try{const r=await fetch('/api/coach-submit',{method:'POST',body:new FormData(form)}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.error||'Unable to submit.');if(mainStatus)mainStatus.textContent='';success?.classList.add('show');const keepType=field('type',form)?.value;form.reset();if(typeof window.setType==='function'&&keepType)window.setType(keepType);syncPhone();}
+        try{const r=await fetch('/api/coach-submit',{method:'POST',body:new FormData(form)}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.error||'Unable to submit.');if(mainStatus)mainStatus.textContent='';success?.classList.add('show');const keepType=field('type',form)?.value;form.reset();if(typeof window.setType==='function'&&keepType)window.setType(keepType);if(signedIn){const d=await session();if(d.valid)fill(form,d.coach||{});}syncPhone();}
         catch(err){if(mainStatus)mainStatus.textContent=err.message||'Something went wrong. Please try again.'}
         finally{if(submitButton)submitButton.disabled=false;if(window.turnstile)try{window.turnstile.reset()}catch{}}
       },true)
