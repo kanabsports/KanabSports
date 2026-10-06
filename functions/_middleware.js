@@ -1,6 +1,6 @@
 export async function onRequest(context) {
   const url0=new URL(context.request.url);
-  if(['/britt/','/britt','/britt.html','/jodi/','/jodi','/jodi.html'].includes(url0.pathname))return Response.redirect(new URL('/team-d/',url0.origin),302);
+  if(['/team-d/','/team-d','/britt/','/britt','/britt.html','/jodi/','/jodi','/jodi.html','/amber/','/amber'].includes(url0.pathname))return Response.redirect(new URL('/coaches',url0.origin),301);
   const response = await context.next();
   const url = new URL(context.request.url);
   const contentType = response.headers.get('content-type') || '';
