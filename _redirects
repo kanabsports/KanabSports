@@ -1,9 +1,21 @@
 /family /family/index.html 200
 /family/ /family/index.html 200
-/team/britt /team/britt.html 200
-/britt /britt.html 200
 /team.html /family/ 301
 /team /family/ 301
 /team/ /family/ 301
-\n/coach-register /coach-register.html 200\n/coach-account /coach-account.html 200\n/coaches /coaches.html 200\n/score-assistants /score-assistants.html 200\n/score-assistant /score-assistant/index.html 200\n/score-assistant/ /score-assistant/index.html 200\n
+/team-d /coaches 301
+/team-d/ /coaches 301
+/britt /coaches 301
+/britt/ /coaches 301
+/britt.html /coaches 301
+/jodi /coaches 301
+/jodi/ /coaches 301
+/amber /coaches 301
+/amber/ /coaches 301
+/coach-register /coach-register.html 200
+/coach-account /coach-account.html 200
+/coaches /coaches.html 200
+/score-assistants /score-assistants.html 200
 /score-assistants/ /score-assistants.html 200
+/score-assistant /score-assistant/index.html 200
+/score-assistant/ /score-assistant/index.html 200
