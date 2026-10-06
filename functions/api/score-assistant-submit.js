@@ -9,7 +9,7 @@ export async function onRequest({request,env}){
       const u=new URL(request.url),token=clean(u.searchParams.get('token'),200);
       const ctx=await assistantContext(db,token);
       if(!ctx)return json({success:false,error:'This score assistant link is invalid, expired, or revoked.'},404);
-      return json({success:true,assistant:{name:ctx.assistant_name,trusted:Boolean(ctx.trusted)},coach:{name:ctx.coach_name,organization:ctx.organization,sport:ctx.sport}});
+      return json({success:true,assistant:{name:ctx.assistant_name,trusted:Boolean(ctx.trusted)},coach:{name:ctx.coach_name,organization:(ctx.team_name||ctx.organization),sport:ctx.sport}});
     }
     if(request.method!=='POST')return json({success:false,error:'Method not allowed.'},405);
     const body=await request.json(),token=clean(body.token,200),ctx=await assistantContext(db,token);
@@ -27,7 +27,7 @@ export async function onRequest({request,env}){
     await db.prepare(`INSERT INTO coach_submissions
       (id,source,type,name,email,team,sport,event_date,opponent,result,link,message,status,review_token_hash,review_expires_at,reviewed_at,published_at,created_at)
       VALUES (?,'Score Assistant','Score',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(id,ctx.coach_name,ctx.coach_email,ctx.organization,ctx.sport,date,opponent,result,link,audit,trusted?'approved':'pending',trusted?null:reviewHash,trusted?null:reviewExpires,trusted?now:null,trusted?now:null,now).run();
+      .bind(id,ctx.coach_name,ctx.coach_email,(ctx.team_name||ctx.organization),ctx.sport,date,opponent,result,link,audit,trusted?'approved':'pending',trusted?null:reviewHash,trusted?null:reviewExpires,trusted?now:null,trusted?now:null,now).run();
     await addAuditColumns(db);
     await db.prepare(`UPDATE coach_submissions SET coach_id=?,coach_name=?,assistant_id=?,assistant_name=?,approval_mode=?,coach_approved_at=? WHERE id=?`)
       .bind(ctx.coach_id,ctx.coach_name,ctx.assistant_id,ctx.assistant_name,trusted?'trusted_auto':'coach_sms',trusted?now:null,id).run();
@@ -38,13 +38,13 @@ export async function onRequest({request,env}){
     const coachPhone=normalizePhone(ctx.coach_phone);
     let channel='sms',notified=false;
     if(coachPhone&&smsConfigured(env)){
-      const bodyText=`Kanab Sports score approval\n${ctx.assistant_name}: ${ctx.organization} ${result} vs ${opponent}.\nApprove: ${approve}\nDeny: ${deny}`;
+      const bodyText=`Kanab Sports score approval\n${ctx.assistant_name}: ${(ctx.team_name||ctx.organization)} ${result} vs ${opponent}.\nApprove: ${approve}\nDeny: ${deny}`;
       notified=await sendSms(env,coachPhone,bodyText);
     }
     if(!notified&&env.RESEND_API_KEY){
       channel='email';
-      const text=`Score approval needed\n\n${ctx.assistant_name} submitted: ${ctx.organization} ${result} vs ${opponent} on ${date}.\n\nApprove & publish: ${approve}\nDeny: ${deny}`;
-      const html=`<div style="font-family:Arial,sans-serif;line-height:1.6;max-width:620px"><div style="font-size:12px;font-weight:800;color:#e32636;text-transform:uppercase">Kanab Sports · Score approval</div><h2>${esc(ctx.organization)} ${esc(result)} vs ${esc(opponent)}</h2><p>${esc(ctx.assistant_name)} submitted this score on your behalf.</p><a href="${esc(approve)}" style="display:block;background:#16833a;color:white;text-align:center;text-decoration:none;font-weight:800;padding:16px;border-radius:9px;margin:20px 0">Approve & publish</a><a href="${esc(deny)}" style="display:block;color:#9d2028;text-align:center;font-weight:700">Deny</a></div>`;
+      const text=`Score approval needed\n\n${ctx.assistant_name} submitted: ${(ctx.team_name||ctx.organization)} ${result} vs ${opponent} on ${date}.\n\nApprove & publish: ${approve}\nDeny: ${deny}`;
+      const html=`<div style="font-family:Arial,sans-serif;line-height:1.6;max-width:620px"><div style="font-size:12px;font-weight:800;color:#e32636;text-transform:uppercase">Kanab Sports · Score approval</div><h2>${esc((ctx.team_name||ctx.organization))} ${esc(result)} vs ${esc(opponent)}</h2><p>${esc(ctx.assistant_name)} submitted this score on your behalf.</p><a href="${esc(approve)}" style="display:block;background:#16833a;color:white;text-align:center;text-decoration:none;font-weight:800;padding:16px;border-radius:9px;margin:20px 0">Approve & publish</a><a href="${esc(deny)}" style="display:block;color:#9d2028;text-align:center;font-weight:700">Deny</a></div>`;
       const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`score-approval-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[ctx.coach_email],subject:`Approve score — ${ctx.sport}`,text,html})});
       notified=sent.ok;
     }
@@ -57,7 +57,7 @@ async function assistantContext(db,token){
   if(!/^[a-f0-9]{64}$/i.test(String(token||'')))return null;
   const hash=await sha256(token);
   return await db.prepare(`SELECT s.id AS assistant_id,s.name AS assistant_name,s.email AS assistant_email,s.trusted,
-    a.id AS coach_id,a.name AS coach_name,a.email AS coach_email,a.phone AS coach_phone,a.organization,a.sport
+    a.id AS coach_id,a.name AS coach_name,a.email AS coach_email,a.phone AS coach_phone,a.organization,a.team_name,a.sport
     FROM coach_score_assistants s JOIN coach_access_requests a ON a.id=s.coach_id
     WHERE s.invite_token_hash=? AND s.status='active' AND datetime(s.invite_expires_at)>datetime('now') AND a.status='approved' LIMIT 1`).bind(hash).first();
 }
