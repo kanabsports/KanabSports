@@ -1,0 +1,40 @@
+name: Build My Family Walkthrough
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/build-family-walkthrough.py'
+      - '.github/workflows/build-family-walkthrough.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-video:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install video dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-liberation2
+          python -m pip install --upgrade pillow
+
+      - name: Build walkthrough
+        run: python tools/build-family-walkthrough.py
+
+      - name: Commit generated video
+        run: |
+          git config user.name "Kanab Sports Bot"
+          git config user.email "howdy@kanabsports.com"
+          git add assets/my-family-walkthrough.mp4 assets/my-family-walkthrough-poster.jpg
+          if git diff --cached --quiet; then
+            echo "Walkthrough already up to date."
+          else
+            git commit -m "Build My Family walkthrough video"
+            git push
+          fi
