@@ -55,7 +55,23 @@ export async function onRequest({request,env}){
 
 async function assistantGames(db,ctx){
   let games=[];
-  try{games=(await db.prepare(`SELECT id,date,opponent,time,site,result FROM coach_schedule_games WHERE coach_id=? ORDER BY date`).bind(ctx.coach_id).all()).results||[]}catch{}
+  try{
+    const latest=await db.prepare(`
+      SELECT g.source_document_id
+      FROM coach_schedule_games g
+      JOIN coach_documents c ON c.id=g.source_document_id
+      WHERE g.coach_id=? AND c.status='approved'
+      ORDER BY datetime(COALESCE(c.reviewed_at,c.created_at)) DESC
+      LIMIT 1
+    `).bind(ctx.coach_id).first();
+    if(latest?.source_document_id)games=(await db.prepare(`
+      SELECT g.id,g.date,g.opponent,g.time,g.site,g.result
+      FROM coach_schedule_games g
+      JOIN coach_documents c ON c.id=g.source_document_id
+      WHERE g.coach_id=? AND g.source_document_id=? AND c.status='approved'
+      ORDER BY g.date
+    `).bind(ctx.coach_id,latest.source_document_id).all()).results||[];
+  }catch{}
   if(!games.length){
     try{
       const rows=(await db.prepare(`SELECT d.payload_json FROM dev_documents d JOIN coach_documents c ON c.id=d.document_id WHERE c.verification_id=? AND c.status='approved' ORDER BY d.updated_at DESC LIMIT 3`).bind(ctx.coach_id).all()).results||[];
