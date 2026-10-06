@@ -29,7 +29,7 @@ export async function onRequest({request,env}){
       VALUES (?,'Score Assistant','Score',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .bind(id,ctx.coach_name,ctx.coach_email,(ctx.team_name||ctx.organization),ctx.sport,date,opponent,result,link,audit,trusted?'approved':'pending',trusted?null:reviewHash,trusted?null:reviewExpires,trusted?now:null,trusted?now:null,now).run();
     await addAuditColumns(db);
-    await db.prepare(`UPDATE coach_submissions SET coach_id=?,coach_name=?,assistant_id=?,assistant_name=?,approval_mode=?,coach_approved_at=? WHERE id=?`)
+    await db.prepare(`UPDATE coach_submissions SET accountable_coach_id=?,accountable_coach_name=?,submitted_by_type='score_assistant',assistant_id=?,assistant_name=?,approval_mode=?,coach_approved_at=? WHERE id=?`)
       .bind(ctx.coach_id,ctx.coach_name,ctx.assistant_id,ctx.assistant_name,trusted?'trusted_auto':'coach_sms',trusted?now:null,id).run();
 
     if(trusted)return json({success:true,status:'published',message:`Published. ${ctx.coach_name} is recorded as the responsible coach.`});
@@ -73,7 +73,7 @@ async function schema(db){
   await addAuditColumns(db);
 }
 async function addAuditColumns(db){for(const q of [
-  `ALTER TABLE coach_submissions ADD COLUMN coach_id TEXT`,`ALTER TABLE coach_submissions ADD COLUMN coach_name TEXT`,
+  `ALTER TABLE coach_submissions ADD COLUMN accountable_coach_id TEXT`,`ALTER TABLE coach_submissions ADD COLUMN accountable_coach_name TEXT`,`ALTER TABLE coach_submissions ADD COLUMN submitted_by_type TEXT`,
   `ALTER TABLE coach_submissions ADD COLUMN assistant_id TEXT`,`ALTER TABLE coach_submissions ADD COLUMN assistant_name TEXT`,
   `ALTER TABLE coach_submissions ADD COLUMN approval_mode TEXT`,`ALTER TABLE coach_submissions ADD COLUMN coach_approved_at TEXT`
 ])try{await db.prepare(q).run()}catch{}}
