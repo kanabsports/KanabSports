@@ -44,7 +44,8 @@ export async function ensureCoachCore(db){
     `ALTER TABLE coach_access_requests ADD COLUMN access_code_hash TEXT`,
     `ALTER TABLE coach_access_requests ADD COLUMN password_hash TEXT`,
     `ALTER TABLE coach_access_requests ADD COLUMN password_salt TEXT`,
-    `ALTER TABLE coach_access_requests ADD COLUMN password_iterations INTEGER`
+    `ALTER TABLE coach_access_requests ADD COLUMN password_iterations INTEGER`,
+    `ALTER TABLE coach_access_requests ADD COLUMN team_name TEXT`
   ])try{await db.prepare(q).run()}catch{}
   await db.prepare(`CREATE TABLE IF NOT EXISTS coach_sessions (
     id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,
