@@ -1,0 +1,23 @@
+import {sha256,json} from './_lib/coach-auth.js';
+
+export async function onRequestGet({request,env}){
+  if(!env.SPORTS_DB)return page('Score approval is unavailable.',false,503);
+  const db=env.SPORTS_DB,u=new URL(request.url),token=String(u.searchParams.get('token')||''),action=String(u.searchParams.get('action')||'').toLowerCase();
+  if(!token||!['approve','reject','confirm-reject'].includes(action))return page('This approval link is invalid.',false,400);
+  try{
+    await schema(db);const hash=await sha256(token);
+    const row=await db.prepare(`SELECT id,team,sport,opponent,result,event_date,status,review_expires_at,coach_name,assistant_name FROM coach_submissions WHERE review_token_hash=? AND source='Score Assistant' LIMIT 1`).bind(hash).first();
+    if(!row)return page('This score approval link is invalid or already used.',false,404);
+    if(row.status!=='pending')return page(`This score has already been ${row.status}.`,row.status==='approved',409);
+    if(!row.review_expires_at||Date.parse(row.review_expires_at)<Date.now())return page('This score approval link has expired.',false,410);
+    if(action==='reject')return confirmReject(u.origin,token,row);
+    if(action==='confirm-reject'){await db.prepare(`UPDATE coach_submissions SET status='rejected',reviewed_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(row.id).run();return page('Score denied. Nothing was published.',true,200);}
+    await db.prepare(`UPDATE coach_submissions SET status='approved',reviewed_at=datetime('now'),published_at=datetime('now'),coach_approved_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(row.id).run();
+    return page(`Published: ${row.team} ${row.result} vs ${row.opponent}`,true,200,`${row.coach_name||'Coach'} approved ${row.assistant_name||'the score assistant'}'s report. It is now live.`);
+  }catch(e){console.error('score assistant review error',e);return page('Something went wrong while reviewing this score.',false,500);}
+}
+async function schema(db){for(const q of [`ALTER TABLE coach_submissions ADD COLUMN coach_name TEXT`,`ALTER TABLE coach_submissions ADD COLUMN assistant_name TEXT`,`ALTER TABLE coach_submissions ADD COLUMN coach_approved_at TEXT`])try{await db.prepare(q).run()}catch{}}
+function confirmReject(origin,token,row){const href=`${origin}/score-assistant-review?token=${encodeURIComponent(token)}&action=confirm-reject`;return new Response(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Deny score?</title><style>${css}</style></head><body><main class="card"><div class="brand">KANAB <span>SPORTS</span></div><h1>Deny this score?</h1><p>${esc(row.team)} ${esc(row.result)} vs ${esc(row.opponent)}</p><a class="approve" href="/">Keep pending</a><a class="deny" href="${esc(href)}">Yes, deny</a></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}})}
+function page(message,success,status,detail='You can close this page.'){return new Response(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kanab Sports Score Review</title><style>${css}</style></head><body><main class="card"><div class="brand">KANAB <span>SPORTS</span></div><div class="badge">${success?'Done':'Needs attention'}</div><h1>${esc(message)}</h1><p>${esc(detail)}</p><a class="approve" href="/">Back to Kanab Sports</a></main></body></html>`,{status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}})}
+const css=`body{margin:0;background:#0b0c0f;color:#fff;font-family:Arial,sans-serif;display:grid;place-items:center;min-height:100vh}.card{width:min(560px,calc(100% - 32px));background:#15171b;border:1px solid #30343b;border-radius:18px;padding:32px}.brand{font-size:24px;font-weight:900;margin-bottom:24px}.brand span{color:#e32636}.badge{display:inline-block;background:#153c24;color:#8be3a0;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:900;text-transform:uppercase}h1{font-size:30px;line-height:1.08;margin:15px 0 10px}p{color:#b9bdc5;line-height:1.5}.approve,.deny{display:block;text-align:center;text-decoration:none;font-weight:900;padding:14px 16px;border-radius:9px;margin-top:18px}.approve{background:#16833a;color:#fff}.deny{border:1px solid #6b2a30;color:#ff9ba4}`;
+function esc(v){return String(v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
