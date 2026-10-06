@@ -6,7 +6,7 @@ export async function getCoach(request,db){
   if(!token)return null;
   const hash=await sha256(token);
   return await db.prepare(`
-    SELECT a.id,a.name,a.email,a.phone,a.sport,a.organization,a.role,a.status
+    SELECT a.id,a.name,a.email,a.phone,a.sport,a.organization,a.team_name,a.role,a.status
     FROM coach_sessions s
     JOIN coach_access_requests a ON a.id=s.coach_id
     WHERE s.token_hash=? AND datetime(s.expires_at)>datetime('now') AND a.status='approved'
