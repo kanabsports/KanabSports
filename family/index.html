@@ -147,9 +147,17 @@ function renderAccount(){
 function go(name){activePane=name;$('connectionTabs').hidden=['kids','settings'].includes(name)||!read().some(x=>teamData(x));if(name==='messages'){localStorage.setItem('ksUpdatesSeen',String(Date.now()));$('updatesBadge').hidden=true;}document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);document.querySelectorAll('.rail button[data-pane]').forEach(b=>{b.classList.toggle('active',b.dataset.pane===name);if(b.dataset.pane===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});window.scrollTo({top:0,behavior:'smooth'})}
 function openAdd(prefill='',child=''){addMode='team';$('addPanel').querySelector('.eyebrow').textContent='SCHOOL & REC';$('addPanel').hidden=false;$('connectionFields').hidden=false;$('schoolCode').value='';$('teamCode').value=prefill;$('childLabel').value=child;$('addTitle').textContent='Connect your sports.';$('addTitle').nextElementSibling.textContent='Enter a school code, a rec code, or both. You only need the ones your family uses.';$('addForm').querySelector('[type=submit]').textContent='Save Connections';document.querySelector('.pilot').hidden=false;$('addStatus').textContent='';setTimeout(()=>$('schoolCode').focus(),20)}
 function openKid(){openAdd();addMode='kid';$('addPanel').querySelector('.eyebrow').textContent='ADD A KID';$('addTitle').textContent='Add a kid.';$('addTitle').nextElementSibling.textContent='Use a nickname, initials, or leave it blank. You can connect school or rec later.';$('connectionFields').hidden=true;$('addForm').querySelector('[type=submit]').textContent='Add Kid';document.querySelector('.pilot').hidden=true;setTimeout(()=>$('childLabel').focus(),25)}
-function addConnections(){
+async function resolveTeamCode(code,refresh=false){
+ code=String(code||'').trim().toUpperCase();if(!code||code==='__KID__')return null;
+ if(registry[code]&&!refresh)return registry[code];
+ try{const r=await fetch('/api/team-connection?code='+encodeURIComponent(code),{cache:'no-store'}),d=await r.json();if(!r.ok||!d.success||!d.team)return registry[code]||null;registry[code]=d.team;return registry[code]}catch{return registry[code]||null}
+}
+async function hydrateCodes(codes,refresh=false){for(const code of [...new Set(codes.map(x=>String(x||'').trim().toUpperCase()).filter(x=>x&&x!=='__KID__'))])if(refresh||!registry[code])await resolveTeamCode(code,refresh)}
+async function addConnections(){
  const school=$('schoolCode').value.trim().toUpperCase(),rec=$('teamCode').value.trim().toUpperCase(),codes=[school,rec].filter(Boolean);
  if(!codes.length){$('addStatus').textContent='Enter a school code or a rec code. You don’t need both.';return;}
+ $('addStatus').textContent='Checking team code…';
+ await hydrateCodes(codes);
  for(const [code,category] of [[school,'school'],[rec,'rec']])if(code&&registry[code]?.category!==category){$('addStatus').textContent='That '+categoryLabel(category).toLowerCase()+' code is not active. Check the code and try again. Nothing has been added.';return;}
  for(const code of codes)add(code,$('childLabel').value,false);
  closeAdd();activeCategory='';go('home');render();
@@ -176,7 +184,7 @@ async function loadAccount(){
  const guest=owner?[]:normalized(read());const merged=[...remote];
  guest.forEach(r=>{if(!merged.some(x=>x.entryId===r.entryId||x.code===r.code&&x.child===r.child))merged.push(r)});
  const inviteEntry=normalized(read()).filter(x=>x.entryId===newInviteId);inviteEntry.forEach(r=>{if(!merged.some(x=>x.code===r.code&&x.child===r.child))merged.push(r)});
- saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);render();document.dispatchEvent(new Event('familyconnectionschanged'));if(guest.length||inviteEntry.length)syncFamily();
+ saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);await hydrateCodes(merged.map(x=>x.code));render();document.dispatchEvent(new Event('familyconnectionschanged'));if(guest.length||inviteEntry.length)syncFamily();
  }catch{$('saveStatus').textContent='Could not check your account. Your saved teams on this device are still available.';renderAccount()}
 }
 function syncFamily(){if(!account)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>{
@@ -207,9 +215,29 @@ $('accountForm').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.dis
 $('backAccount').onclick=()=>{accountView('setup');$('codeStatus').textContent='';$('accountStatus').textContent=''};
 $('codeForm').onsubmit=async e=>{e.preventDefault();$('codeStatus').textContent='';if($('newParentPin').value!==$('confirmParentPin').value){$('codeStatus').textContent='Your PINs do not match. Enter the same 6 digits in both fields.';return}const b=e.submitter;b.disabled=true;try{await api({action:'verify',challenge,code:$('parentCode').value,pin:$('newParentPin').value});await loadAccount();if(!account)throw Error('Your PIN was saved. Use Sign In to load your family.');closeAccount();go('home')}catch(err){$('codeStatus').textContent=err.message}finally{b.disabled=false}};
 let newInviteId='';
-const q=new URLSearchParams(location.search),invite=q.get('code');if(invite&&registry[invite.toUpperCase()]){const a=normalized(read()),child=q.get('child')||'';if(!a.some(x=>x.code===invite.toUpperCase()&&x.child===child)){newInviteId='entry-'+crypto.randomUUID();a.push({code:invite.toUpperCase(),child,addedAt:Date.now(),entryId:newInviteId});saveNormalized(a)}history.replaceState({},'',location.pathname)}
-async function loadFeed(){try{const r=await fetch('/api/team-workspace?view=public',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json();registry['TEAM-D'].events=d.team.events.map((e,i)=>({...e,id:'team-d-'+i}));registry['TEAM-D'].messages=d.announcements.map(m=>({...m,date:new Date(m.created).toLocaleString('en-US',{timeZone:'America/Denver',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}));feedLoaded=true;feedError='';}catch{feedError='Coach updates could not refresh. Please try again shortly.';}render();}
-render();loadAccount().then(()=>{mountPush($('pushPanel'),()=>normalized(read()).map(x=>x.code));if(q.get('view')==='messages'){activeCategory=q.get('category')==='rec'?'rec':'';render();go('messages');}});loadFeed();setInterval(()=>{if(!document.hidden)loadFeed();},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadFeed();});
+const q=new URLSearchParams(location.search),invite=q.get('code');
+async function applyInvite(){
+ if(!invite)return;
+ const code=invite.toUpperCase(),team=await resolveTeamCode(code);
+ if(team){const a=normalized(read()),child=q.get('child')||'';if(!a.some(x=>x.code===code&&x.child===child)){newInviteId='entry-'+crypto.randomUUID();a.push({code,child,addedAt:Date.now(),entryId:newInviteId});saveNormalized(a)}}
+ history.replaceState({},'',location.pathname);
+}
+async function loadFeed(){
+ let failed=false;
+ try{const r=await fetch('/api/team-workspace?view=public',{cache:'no-store'});if(r.ok){const d=await r.json();if(registry['TEAM-D']){registry['TEAM-D'].events=d.team.events.map((e,i)=>({...e,id:'team-d-'+i}));registry['TEAM-D'].messages=d.announcements.map(m=>({...m,date:new Date(m.created).toLocaleString('en-US',{timeZone:'America/Denver',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}))}}}catch{failed=true}
+ try{const dynamic=normalized(read()).map(x=>x.code).filter(code=>code.startsWith('KS-'));await hydrateCodes(dynamic,true)}catch{failed=true}
+ feedLoaded=true;feedError=failed?'Some coach updates could not refresh. Please try again shortly.':'';render();
+}
+(async()=>{
+ await hydrateCodes(normalized(read()).map(x=>x.code));
+ await applyInvite();
+ render();
+ await loadAccount();
+ mountPush($('pushPanel'),()=>normalized(read()).filter(x=>x.code!=='__KID__').map(x=>x.code));
+ if(q.get('view')==='messages'){activeCategory=q.get('category')==='rec'?'rec':'';render();go('messages');}
+ await loadFeed();
+})();
+setInterval(()=>{if(!document.hidden)loadFeed();},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadFeed();});
 })();
 </script>
 </body>
