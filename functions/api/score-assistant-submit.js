@@ -34,22 +34,22 @@ export async function onRequest({request,env}){
 
     if(trusted)return json({success:true,status:'published',message:`Published. ${ctx.coach_name} is recorded as the responsible coach.`});
 
-    const origin=new URL(request.url).origin,approve=`${origin}/score-assistant-review?token=${encodeURIComponent(reviewToken)}&action=approve`,deny=`${origin}/score-assistant-review?token=${encodeURIComponent(reviewToken)}&action=reject`;
+    const origin=new URL(request.url).origin,review=`${origin}/score-assistant-review?token=${encodeURIComponent(reviewToken)}`;
     const coachPhone=normalizePhone(ctx.coach_phone),twilio=await twilioConfig(db,env);
-    let channel='sms',notified=false;
+    let smsSent=false;
     if(coachPhone&&twilio.configured){
-      const bodyText=`Kanab Sports score approval\n${ctx.assistant_name}: ${(ctx.team_name||ctx.organization)} ${result} vs ${opponent}.\nApprove: ${approve}\nDeny: ${deny}`;
-      notified=await sendSms(twilio,coachPhone,bodyText);
+      const bodyText=`Kanab Sports score approval\n${ctx.assistant_name}: ${(ctx.team_name||ctx.organization)} ${result} vs ${opponent}.\nReview Score: ${review}`;
+      smsSent=await sendSms(twilio,coachPhone,bodyText);
     }
-    if(!notified&&env.RESEND_API_KEY){
-      channel='email';
-      const text=`Score approval needed\n\n${ctx.assistant_name} submitted: ${(ctx.team_name||ctx.organization)} ${result} vs ${opponent} on ${date}.\n\nApprove & publish: ${approve}\nDeny: ${deny}`;
-      const html=`<div style="font-family:Arial,sans-serif;line-height:1.6;max-width:620px"><div style="font-size:12px;font-weight:800;color:#e32636;text-transform:uppercase">Kanab Sports · Score approval</div><h2>${esc((ctx.team_name||ctx.organization))} ${esc(result)} vs ${esc(opponent)}</h2><p>${esc(ctx.assistant_name)} submitted this score on your behalf.</p><a href="${esc(approve)}" style="display:block;background:#16833a;color:white;text-align:center;text-decoration:none;font-weight:800;padding:16px;border-radius:9px;margin:20px 0">Approve & publish</a><a href="${esc(deny)}" style="display:block;color:#9d2028;text-align:center;font-weight:700">Deny</a></div>`;
-      const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`score-approval-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[ctx.coach_email],subject:`Approve score — ${ctx.sport}`,text,html})});
-      notified=sent.ok;
+    let emailSent=false;
+    if(env.RESEND_API_KEY){
+      const text=`Score approval needed\n\n${ctx.assistant_name} submitted: ${(ctx.team_name||ctx.organization)} ${result} vs ${opponent} on ${date}.\n\nReview score: ${review}`;
+      const html=`<div style="font-family:Arial,sans-serif;line-height:1.6;max-width:620px"><div style="font-size:12px;font-weight:800;color:#e32636;text-transform:uppercase">Kanab Sports · Score approval</div><h2>${esc((ctx.team_name||ctx.organization))} ${esc(result)} vs ${esc(opponent)}</h2><p>${esc(ctx.assistant_name)} submitted this score on your behalf. Nothing is live until you review it.</p><a href="${esc(review)}" style="display:block;background:#16833a;color:white;text-align:center;text-decoration:none;font-weight:800;padding:16px;border-radius:9px;margin:20px 0">Review Score</a></div>`;
+      const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`score-approval-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[ctx.coach_email],subject:`Review score — ${ctx.sport}`,text,html})});
+      emailSent=sent.ok;
     }
-    if(!notified){await db.prepare(`DELETE FROM coach_submissions WHERE id=?`).bind(id).run();return json({success:false,error:'We could not notify the coach for approval, so the score was not saved.'},502);}
-    return json({success:true,status:'pending',channel,message:channel==='sms'?'Submitted. The coach was texted for approval.':'Submitted. The coach was emailed for approval because SMS was unavailable.'});
+    const channel=smsSent&&emailSent?'sms+email':smsSent?'sms':emailSent?'email':'portal';
+    return json({success:true,status:'pending',channel,message:channel==='sms+email'?'Submitted. The coach was texted and emailed a Review Score link.':channel==='sms'?'Submitted. The coach was texted a Review Score link.':channel==='email'?'Submitted. The coach was emailed a Review Score link.':'Submitted. The score is safely pending in the Coach Portal, but SMS and email notifications are temporarily unavailable.'});
   }catch(e){console.error('score assistant submit error',e);return json({success:false,error:'Could not submit the score. Please try again.'},500);}
 }
 
