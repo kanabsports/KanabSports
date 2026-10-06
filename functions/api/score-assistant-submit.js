@@ -35,11 +35,11 @@ export async function onRequest({request,env}){
     if(trusted)return json({success:true,status:'published',message:`Published. ${ctx.coach_name} is recorded as the responsible coach.`});
 
     const origin=new URL(request.url).origin,approve=`${origin}/score-assistant-review?token=${encodeURIComponent(reviewToken)}&action=approve`,deny=`${origin}/score-assistant-review?token=${encodeURIComponent(reviewToken)}&action=reject`;
-    const coachPhone=normalizePhone(ctx.coach_phone);
+    const coachPhone=normalizePhone(ctx.coach_phone),twilio=await twilioConfig(db,env);
     let channel='sms',notified=false;
-    if(coachPhone&&smsConfigured(env)){
+    if(coachPhone&&twilio.configured){
       const bodyText=`Kanab Sports score approval\n${ctx.assistant_name}: ${(ctx.team_name||ctx.organization)} ${result} vs ${opponent}.\nApprove: ${approve}\nDeny: ${deny}`;
-      notified=await sendSms(env,coachPhone,bodyText);
+      notified=await sendSms(twilio,coachPhone,bodyText);
     }
     if(!notified&&env.RESEND_API_KEY){
       channel='email';
@@ -77,8 +77,19 @@ async function addAuditColumns(db){for(const q of [
   `ALTER TABLE coach_submissions ADD COLUMN assistant_id TEXT`,`ALTER TABLE coach_submissions ADD COLUMN assistant_name TEXT`,
   `ALTER TABLE coach_submissions ADD COLUMN approval_mode TEXT`,`ALTER TABLE coach_submissions ADD COLUMN coach_approved_at TEXT`
 ])try{await db.prepare(q).run()}catch{}}
-function smsConfigured(env){return !!(env.TWILIO_AUTH_TOKEN&&/^AC[a-f0-9]{32}$/i.test(String(env.TWILIO_ACCOUNT_SID||''))&&/^MG[a-f0-9]{32}$/i.test(String(env.TWILIO_MESSAGING_SERVICE_SID||'')));}
-async function sendSms(env,to,body){
-  try{const r=await fetch(`https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`,{method:'POST',headers:{Authorization:'Basic '+btoa(env.TWILIO_ACCOUNT_SID+':'+env.TWILIO_AUTH_TOKEN),'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({To:to,MessagingServiceSid:env.TWILIO_MESSAGING_SERVICE_SID,Body:body})});return r.ok}catch{return false}
+async function twilioConfig(db,env){
+  let account=String(env.TWILIO_ACCOUNT_SID||''),service=String(env.TWILIO_MESSAGING_SERVICE_SID||''),token=String(env.TWILIO_AUTH_TOKEN||'');
+  if((!account||!service)&&db){
+    try{
+      const rows=(await db.prepare("SELECT key,value FROM team_d_settings WHERE key IN ('twilio_account_sid','twilio_service_sid')").all()).results||[];
+      const values=Object.fromEntries(rows.map(r=>[r.key,r.value]));
+      account=account||String(values.twilio_account_sid||'');
+      service=service||String(values.twilio_service_sid||'');
+    }catch{}
+  }
+  return {account,service,token,configured:!!(token&&/^AC[a-f0-9]{32}$/i.test(account)&&/^MG[a-f0-9]{32}$/i.test(service))};
+}
+async function sendSms(cfg,to,body){
+  try{const r=await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.account}/Messages.json`,{method:'POST',headers:{Authorization:'Basic '+btoa(cfg.account+':'+cfg.token),'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({To:to,MessagingServiceSid:cfg.service,Body:body})});return r.ok}catch{return false}
 }
 function esc(v){return String(v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');}
