@@ -6,7 +6,7 @@ export async function onRequestGet({request,env}){
     const token=cookie(request,COOKIE);
     if(!token)return json({authenticated:false});
     const hash=await sha256(token);
-    const coach=await env.SPORTS_DB.prepare(`SELECT a.id,a.name,a.email,a.phone,a.sport,a.organization,a.role
+    const coach=await env.SPORTS_DB.prepare(`SELECT a.id,a.name,a.email,a.phone,a.sport,a.organization,a.team_name,a.role
       FROM coach_sessions s JOIN coach_access_requests a ON a.id=s.coach_id
       WHERE s.token_hash=? AND datetime(s.expires_at)>datetime('now') AND a.status='approved' LIMIT 1`).bind(hash).first();
     return coach?json({authenticated:true,coach}):json({authenticated:false});
