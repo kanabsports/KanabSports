@@ -56,7 +56,8 @@ async function seedStartingLedger(db){
     ['seed-credits','expense','2026-09-13',4.00,'Software','Credits','Credits','starting-ledger'],
     ['seed-tapstitch-main','expense','2026-08-29',116.18,'Apparel Samples','TapStitch','Apparel sample order 1543236378551373824','starting-ledger'],
     ['seed-tapstitch-tee','expense','2026-09-13',13.84,'Apparel Samples','TapStitch','Tee sample order','starting-ledger'],
-    ['seed-printify','expense','2026-09-13',17.71,'Apparel Samples','Printify','Tee sample','starting-ledger']
+    ['seed-printify','expense','2026-09-13',17.71,'Apparel Samples','Printify','Tee sample','starting-ledger'],
+    ['seed-invideo','expense','2026-10-06',20.21,'Software','invideo','Video creation software','starting-ledger']
   ];
   for(const s of seeds)await db.prepare(`INSERT OR IGNORE INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES (?,?,?,?,?,?,?,?,datetime('now'))`).bind(...s).run();
 }
