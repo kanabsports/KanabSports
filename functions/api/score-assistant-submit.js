@@ -1,3 +1,4 @@
+import {notifyCoach} from '../_lib/web-push.js';
 import {ensureCoachCore,sha256,randomToken,clean,json,normalizePhone} from '../_lib/coach-auth.js';
 
 export async function onRequest({request,env}){
@@ -35,6 +36,7 @@ export async function onRequest({request,env}){
     if(trusted)return json({success:true,status:'published',message:`Published. ${ctx.coach_name} is recorded as the responsible coach.`});
 
     const origin=new URL(request.url).origin,review=`${origin}/score-assistant-review?token=${encodeURIComponent(reviewToken)}`;
+    let pushSent=false;try{const pushed=await notifyCoach(db,ctx.coach_id,id);pushSent=Number(pushed?.accepted||0)>0}catch{}
     const coachPhone=normalizePhone(ctx.coach_phone),twilio=await twilioConfig(db,env);
     let smsSent=false;
     if(coachPhone&&twilio.configured){
@@ -48,8 +50,9 @@ export async function onRequest({request,env}){
       const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`score-approval-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[ctx.coach_email],subject:`Review score — ${ctx.sport}`,text,html})});
       emailSent=sent.ok;
     }
-    const channel=smsSent&&emailSent?'sms+email':smsSent?'sms':emailSent?'email':'portal';
-    return json({success:true,status:'pending',channel,message:channel==='sms+email'?'Submitted. The coach was texted and emailed a Review Score link.':channel==='sms'?'Submitted. The coach was texted a Review Score link.':channel==='email'?'Submitted. The coach was emailed a Review Score link.':'Submitted. The score is safely pending in the Coach Portal, but SMS and email notifications are temporarily unavailable.'});
+    const channels=[pushSent?'app':'',smsSent?'sms':'',emailSent?'email':''].filter(Boolean);
+    const channel=channels.length?channels.join('+'):'portal';
+    return json({success:true,status:'pending',channel,message:pushSent?'Submitted. The coach received a Coach app notification and the score is waiting for review.':smsSent&&emailSent?'Submitted. The coach was texted and emailed a Review Score link.':smsSent?'Submitted. The coach was texted a Review Score link.':emailSent?'Submitted. The coach was emailed a Review Score link.':'Submitted. The score is safely pending in the Coach Portal, but outside notifications are temporarily unavailable.'});
   }catch(e){console.error('score assistant submit error',e);return json({success:false,error:'Could not submit the score. Please try again.'},500);}
 }
 
