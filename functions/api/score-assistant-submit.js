@@ -9,7 +9,7 @@ export async function onRequest({request,env}){
       const u=new URL(request.url),token=clean(u.searchParams.get('token'),200);
       const ctx=await assistantContext(db,token);
       if(!ctx)return json({success:false,error:'This score assistant link is invalid, expired, or revoked.'},404);
-      return json({success:true,assistant:{name:ctx.assistant_name,trusted:Boolean(ctx.trusted)},coach:{name:ctx.coach_name,organization:(ctx.team_name||ctx.organization),sport:ctx.sport}});
+      const games=await assistantGames(db,ctx);return json({success:true,assistant:{name:ctx.assistant_name,trusted:Boolean(ctx.trusted)},coach:{name:ctx.coach_name,organization:(ctx.team_name||ctx.organization),sport:ctx.sport},games});
     }
     if(request.method!=='POST')return json({success:false,error:'Method not allowed.'},405);
     const body=await request.json(),token=clean(body.token,200),ctx=await assistantContext(db,token);
@@ -53,6 +53,22 @@ export async function onRequest({request,env}){
   }catch(e){console.error('score assistant submit error',e);return json({success:false,error:'Could not submit the score. Please try again.'},500);}
 }
 
+async function assistantGames(db,ctx){
+  let games=[];
+  try{games=(await db.prepare(`SELECT id,date,opponent,time,site,result FROM coach_schedule_games WHERE coach_id=? ORDER BY date`).bind(ctx.coach_id).all()).results||[]}catch{}
+  if(!games.length){
+    try{
+      const rows=(await db.prepare(`SELECT d.payload_json FROM dev_documents d JOIN coach_documents c ON c.id=d.document_id WHERE c.verification_id=? AND c.status='approved' ORDER BY d.updated_at DESC LIMIT 3`).bind(ctx.coach_id).all()).results||[];
+      for(const row of rows){try{const p=JSON.parse(row.payload_json||'{}');for(const g of p.schedule||[]){const date=normalizeDate(g.date,p.season),opponent=String(g.opponent||'').replace(/^vs\\.?\\s*/i,'').replace(/^@\\s*/,'').trim();if(date&&opponent)games.push({id:'doc-'+games.length,date,opponent,time:String(g.time||''),site:String(g.site||''),result:String(g.result||'')})}}catch{}}
+    }catch{}
+  }
+  const scores=await db.prepare(`SELECT id,event_date AS date,opponent,result FROM coach_submissions WHERE status='approved' AND type='Score' AND lower(team)=lower(?) AND lower(sport)=lower(?) ORDER BY COALESCE(published_at,reviewed_at,created_at) DESC LIMIT 100`).bind(ctx.team_name||ctx.organization,ctx.sport).all().catch(()=>({results:[]}));
+  const existing=scores.results||[];
+  const seen=new Set();
+  return games.filter(g=>{const k=g.date+'|'+norm(g.opponent);if(seen.has(k))return false;seen.add(k);return true}).map(g=>{const s=existing.find(x=>String(x.date||'').slice(0,10)===String(g.date||'').slice(0,10)&&norm(x.opponent)===norm(g.opponent));return {...g,result:s?.result||g.result||'',status:s?'live':'open'}}).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+}
+function normalizeDate(value,season){const v=String(value||'').trim();if(/^20\\d{2}-\\d{2}-\\d{2}$/.test(v))return v;const m=v.match(/^(\\d{1,2})\\/(\\d{1,2})(?:\\/(20\\d{2}|\\d{2}))?$/);if(m){let y=m[3]?Number(m[3]):Number(String(season||'').match(/20\\d{2}/)?.[0]||new Date().getFullYear());if(y<100)y+=2000;return y+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0')}const d=new Date(v);return Number.isNaN(d.getTime())?'':d.toISOString().slice(0,10)}
+function norm(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 async function assistantContext(db,token){
   if(!/^[a-f0-9]{64}$/i.test(String(token||'')))return null;
   const hash=await sha256(token);
