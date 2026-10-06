@@ -29,7 +29,6 @@ export async function onRequestPost({request,env}){
     const id=crypto.randomUUID(),reviewToken=randomToken(),reviewHash=await sha256Exact(reviewToken),reviewExpires=new Date(Date.now()+7*86400000).toISOString(),sourceNotes=[notes,scheduleUrl?`MaxPreps schedule: ${scheduleUrl}`:'',rosterUrl?`MaxPreps roster: ${rosterUrl}`:''].filter(Boolean).join('\n');
     await env.SPORTS_DB.prepare(`INSERT INTO coach_documents (id,verification_id,name,email,sport,team,document_type,season,notes,filename,byte_size,status,review_token_hash,review_expires_at,is_test,test_expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,0,NULL,datetime('now'))`).bind(id,approved.id,name,email,sport,team,documentType,season,sourceNotes,filename,bytes.byteLength,reviewHash,reviewExpires).run();
     if(scheduleGames.length){
-      await env.SPORTS_DB.prepare(`DELETE FROM coach_schedule_games WHERE coach_id=?`).bind(approved.id).run();
       for(const g of scheduleGames){
         await env.SPORTS_DB.prepare(`INSERT INTO coach_schedule_games (id,coach_id,date,opponent,time,site,result,source_document_id,created_at) VALUES (?,?,?,?,?,?,NULL,?,datetime('now'))`)
           .bind(crypto.randomUUID(),approved.id,g.date,g.opponent,g.time||'',g.site||'',id).run();
