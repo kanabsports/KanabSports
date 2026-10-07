@@ -12,7 +12,8 @@ export function validEndpoint(value){try{const u=new URL(value);return value.len
 export async function sendPush(db,device,table='push_devices'){if(!validEndpoint(device.endpoint))return 'invalid';const key=await keys(db),header=b64(bytes.encode(JSON.stringify({typ:'JWT',alg:'ES256'}))),claims=b64(bytes.encode(JSON.stringify({aud:new URL(device.endpoint).origin,exp:Math.floor(Date.now()/1000)+3600,sub:'mailto:howdy@kanabsports.com'}))),input=header+'.'+claims;const privateKey=await crypto.subtle.importKey('jwk',key.privateKey,{name:'ECDSA',namedCurve:'P-256'},false,['sign']);const signature=b64(await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},privateKey,bytes.encode(input)));
  // No payload: notification text is generic and provided by our service worker.
  const response=await fetch(device.endpoint,{method:'POST',headers:{Authorization:`vapid t=${input}.${signature}, k=${key.publicKey}`,TTL:'3600',Urgency:'normal'},redirect:'error',signal:AbortSignal.timeout(10000)});
- await response.body?.cancel();
+ // Body cleanup must not turn an accepted delivery into a reported failure.
+ try{await response.body?.cancel()}catch{};
  if([404,410].includes(response.status)){const safeTable=['coach_push_devices','owner_push_devices'].includes(table)?table:'push_devices';await db.prepare(`DELETE FROM ${safeTable} WHERE id=?`).bind(device.id).run();return 'expired';}return response.ok?'accepted':'rejected';}
 export async function notifyTeam(db,code,messageId){
  await pushSchema(db);

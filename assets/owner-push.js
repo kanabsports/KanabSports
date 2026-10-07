@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id),enable=$('ownerEnablePush'),test=$('owne
 const tokenKey='ks-owner-push-token';let registration,config,busy=false,installedPrompt;
 const standalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 const ios=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-async function api(body){const r=await fetch('/api/owner-push',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||d.message||'Notifications unavailable.');return d}
+async function api(body){const r=await fetch('/api/owner-push',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error((d.error||d.message||'Notifications unavailable.')+(d.code?' ['+d.code+']':''));return d}
 function keyBytes(value){const raw=atob(value.replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0))}
 function token(){let t=localStorage.getItem(tokenKey);if(!t){t=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem(tokenKey,t)}return t}
 async function display(){const sub=await registration.pushManager.getSubscription();enable.disabled=Boolean(sub)||!config;test.disabled=disable.disabled=!sub;status.textContent=sub?'Notifications enabled on this device. Use Send test notification to check delivery.':'Notifications are off. Enable them to hear about new coach signups and submissions needing approval.'}
@@ -20,7 +20,7 @@ async function refresh(){
   if(sub&&localStorage.getItem(tokenKey))await api({action:'subscribe',endpoint:sub.endpoint,token:token()});
   if(sub&&!localStorage.getItem(tokenKey))await sub.unsubscribe();
   await display();
- }catch(e){status.textContent=e.message;enable.disabled=true}finally{busy=false}
+ }catch(e){status.textContent=e.message;enable.disabled=true;const sub=await registration?.pushManager.getSubscription().catch(()=>null);test.disabled=disable.disabled=!sub}finally{busy=false}
 }
 enable.onclick=async()=>{
  enable.disabled=true;
@@ -43,6 +43,7 @@ async function disconnect(){
 disable.onclick=async()=>{disable.disabled=true;try{await disconnect();await display()}catch(e){status.textContent='Device unsubscribed. Server cleanup will retry automatically when delivery expires.';enable.disabled=false;test.disabled=true}};
 window.ownerNotifications={refresh,disconnect};
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installedPrompt=e;$('ownerInstall').hidden=false});
+$('ownerRetryPush').onclick=()=>refresh();
 $('ownerInstall').onclick=async()=>{if(!installedPrompt)return;await installedPrompt.prompt();installedPrompt=null;$('ownerInstall').hidden=true};
 window.addEventListener('appinstalled',()=>{$('ownerInstall').hidden=true;refresh()});
 new MutationObserver(()=>{if(!$('app').classList.contains('hidden'))refresh()}).observe($('app'),{attributes:true,attributeFilter:['class']});
