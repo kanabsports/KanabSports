@@ -86,7 +86,7 @@ async function assistantGames(db,ctx){
   const seen=new Set();
   return games.filter(g=>{const k=g.date+'|'+norm(g.opponent);if(seen.has(k))return false;seen.add(k);return true}).map(g=>{const s=existing.find(x=>String(x.date||'').slice(0,10)===String(g.date||'').slice(0,10)&&norm(x.opponent)===norm(g.opponent));return {...g,result:s?.result||g.result||'',status:s?'live':'open'}}).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
 }
-function normalizeDate(value,season){const v=String(value||'').trim();if(/^20\\d{2}-\\d{2}-\\d{2}$/.test(v))return v;const m=v.match(/^(\\d{1,2})\\/(\\d{1,2})(?:\\/(20\\d{2}|\\d{2}))?$/);if(m){let y=m[3]?Number(m[3]):Number(String(season||'').match(/20\\d{2}/)?.[0]||new Date().getFullYear());if(y<100)y+=2000;return y+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0')}const d=new Date(v);return Number.isNaN(d.getTime())?'':d.toISOString().slice(0,10)}
+function normalizeDate(value,season){const v=String(value||'').trim();if(/^20\d{2}-\d{2}-\d{2}$/.test(v))return v;const m=v.match(/^(\d{1,2})\/(\d{1,2})(?:\/(20\d{2}|\d{2}))?$/);if(m){let y=m[3]?Number(m[3]):Number(String(season||'').match(/20\d{2}/)?.[0]||new Date().getFullYear());if(y<100)y+=2000;return y+'-'+String(m[1]).padStart(2,'0')+'-'+String(m[2]).padStart(2,'0')}const d=new Date(v);return Number.isNaN(d.getTime())?'':d.toISOString().slice(0,10)}
 function norm(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 async function assistantContext(db,token){
   if(!/^[a-f0-9]{64}$/i.test(String(token||'')))return null;

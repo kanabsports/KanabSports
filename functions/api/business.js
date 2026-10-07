@@ -3,11 +3,11 @@ const OWNER_EMAIL='howdy@kanabsports.com';
 export async function onRequestGet({request,env}){
   if(!env.SPORTS_DB)return json({error:'Database unavailable.'},503);
   const session=await authenticate(request,env.SPORTS_DB);if(!session)return json({error:'Unauthorized.'},401);
-  await schema(env.SPORTS_DB);await seedStartingLedger(env.SPORTS_DB);await seedAlways(env.SPORTS_DB);await seedAlways(env.SPORTS_DB);
+  await schema(env.SPORTS_DB);await seedStartingLedger(env.SPORTS_DB);await seedAlways(env.SPORTS_DB);
   const [transactions,sponsors,mileage]=await Promise.all([
-    env.SPORTS_DB.prepare(`SELECT id,type,date,amount,category,vendor,description,source,created_at FROM business_transactions ORDER BY date DESC,created_at DESC LIMIT 500`).all(),
+    env.SPORTS_DB.prepare(`SELECT id,type,date,amount,category,vendor,description,source,created_at FROM business_transactions ORDER BY date DESC,created_at DESC`).all(),
     env.SPORTS_DB.prepare(`SELECT id,name,contact_email,amount,frequency,status,next_due,notes,created_at,updated_at FROM business_sponsors ORDER BY name`).all(),
-    env.SPORTS_DB.prepare(`SELECT id,date,starting_point,destination,purpose,miles,notes,created_at FROM business_mileage ORDER BY date DESC,created_at DESC LIMIT 500`).all()
+    env.SPORTS_DB.prepare(`SELECT id,date,starting_point,destination,purpose,miles,notes,created_at FROM business_mileage ORDER BY date DESC,created_at DESC`).all()
   ]);
   return json({transactions:transactions.results||[],sponsors:sponsors.results||[],mileage:mileage.results||[]});
 }
@@ -20,7 +20,7 @@ export async function onRequestPost({request,env}){
     const body=await request.json(),action=clean(body.action,30),type=clean(body.type,30);
     if(action!=='add')return json({error:'Unsupported action.'},400);
     if(type==='expense'||type==='income'){
-      const amount=number(body.amount);if(amount<0)return json({error:'Amount must be zero or greater.'},400);
+      const amount=number(body.amount);if(!Number.isFinite(Number(body.amount))||amount<=0)return json({error:'Enter an amount greater than zero.'},400);
       const id=crypto.randomUUID(),date=cleanDate(body.date),category=clean(body.category,120),vendor=clean(body.vendor,160),description=clean(body.description,300);
       if(!date)return json({error:'Date is required.'},400);
       await env.SPORTS_DB.prepare(`INSERT INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES (?,?,?,?,?,?,?,'manual',datetime('now'))`).bind(id,type,date,amount,category,vendor,description).run();
@@ -48,7 +48,16 @@ async function schema(db){
   await db.prepare(`CREATE TABLE IF NOT EXISTS business_mileage (id TEXT PRIMARY KEY,date TEXT NOT NULL,starting_point TEXT,destination TEXT,purpose TEXT NOT NULL,miles REAL NOT NULL DEFAULT 0,notes TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
 }
 
-async function seedAlways(db){await db.prepare(`INSERT OR IGNORE INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES ('seed-invideo','expense','2026-10-06',20.21,'Software','invideo','Video creation software','starting-ledger',datetime('now'))`).run()}
+async function seedAlways(db){
+  // Match existing manual entries as well as the stable seed ID. Atomic statement
+  // prevents duplicate insertion when two owner tabs load simultaneously.
+  await db.prepare(`INSERT OR IGNORE INTO business_transactions
+    (id,type,date,amount,category,vendor,description,source,created_at)
+    SELECT 'seed-invideo','expense','2026-10-06',20.21,'Software','Invideo','Video creation software','starting-ledger',datetime('now')
+    WHERE NOT EXISTS (SELECT 1 FROM business_transactions
+      WHERE type='expense' AND date='2026-10-06' AND ROUND(amount,2)=20.21
+      AND (LOWER(TRIM(vendor)) IN ('invideo','@invideo','invideo ai') OR LOWER(description) LIKE '%invideo%'))`).run();
+}
 
 async function seedStartingLedger(db){
   const row=await db.prepare(`SELECT COUNT(*) AS count FROM business_transactions`).first();if(Number(row?.count||0)>0)return;
@@ -59,7 +68,7 @@ async function seedStartingLedger(db){
     ['seed-tapstitch-main','expense','2026-08-29',116.18,'Apparel Samples','TapStitch','Apparel sample order 1543236378551373824','starting-ledger'],
     ['seed-tapstitch-tee','expense','2026-09-13',13.84,'Apparel Samples','TapStitch','Tee sample order','starting-ledger'],
     ['seed-printify','expense','2026-09-13',17.71,'Apparel Samples','Printify','Tee sample','starting-ledger'],
-    ['seed-invideo','expense','2026-10-06',20.21,'Software','invideo','Video creation software','starting-ledger']
+
   ];
   for(const s of seeds)await db.prepare(`INSERT OR IGNORE INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES (?,?,?,?,?,?,?,?,datetime('now'))`).bind(...s).run();
 }
