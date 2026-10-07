@@ -10,3 +10,15 @@
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
   Cache-Control: no-store
 /\n+  Cache-Control: no-store\n+\n+/index.html\n+  Cache-Control: no-store\n+\n+/homecoming/\n+  Cache-Control: no-store\n+\n+/homecoming/celebration.js\n+  Cache-Control: no-store\n+\n /sterling
+
+/admin
+  Cache-Control: private, no-store, max-age=0
+
+/admin.html
+  Cache-Control: private, no-store, max-age=0
+
+/business
+  Cache-Control: private, no-store, max-age=0
+
+/business.html
+  Cache-Control: private, no-store, max-age=0

@@ -1,6 +1,13 @@
 export async function onRequest(context) {
   const url0=new URL(context.request.url);
   if(['/team-d/','/team-d','/britt/','/britt','/britt.html','/jodi/','/jodi','/jodi.html','/amber/','/amber'].includes(url0.pathname))return Response.redirect(new URL('/coaches',url0.origin),301);
+  if(['/admin','/admin/','/admin.html','/business','/business.html'].includes(url0.pathname)){
+    const response=await context.next();
+    const headers=new Headers(response.headers);
+    headers.set('Cache-Control','private, no-store, max-age=0');
+    headers.set('X-Owner-Console-Version','2026-10-07-owner-v3');
+    return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
+  }
   const response = await context.next();
   const url = new URL(context.request.url);
   const contentType = response.headers.get('content-type') || '';
