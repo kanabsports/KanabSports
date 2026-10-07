@@ -1,7 +1,7 @@
 export async function onRequest(context) {
   const url0=new URL(context.request.url);
   if(['/team-d/','/team-d','/britt/','/britt','/britt.html','/jodi/','/jodi','/jodi.html','/amber/','/amber'].includes(url0.pathname))return Response.redirect(new URL('/coaches',url0.origin),301);
-  if(['/admin','/admin/','/admin.html','/business','/business.html','/owner-sw.js','/owner.webmanifest','/assets/owner-push.js'].includes(url0.pathname)){
+  if(['/admin','/admin/','/admin.html','/business','/business.html','/owner-sw.js','/owner.webmanifest','/assets/owner-push.js','/assets/coach-push.js','/assets/family-push.js','/assets/notification-panel.js'].includes(url0.pathname)){
     const response=await context.next();
     const headers=new Headers(response.headers);
     headers.set('Cache-Control','private, no-store, max-age=0');

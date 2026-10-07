@@ -1,3 +1,4 @@
+import {notificationPanel} from '/assets/notification-panel.js?v=1';
 const key='ksCoachPushDeviceToken';
 const deviceToken=()=>{let t=localStorage.getItem(key);if(!t){t=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem(key,t)}return t};
 const bytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
@@ -20,6 +21,7 @@ async function waitForActive(reg){
 async function mount(){
  const host=document.getElementById('coachAppPanel');if(!host)return;
  host.innerHTML='<div style="background:#fff;border:1px solid #deded9;border-radius:18px;padding:22px"><div class="eyebrow">COACH APP</div><h2 style="margin:7px 0 8px;font-size:28px">Put Kanab Sports on your Home Screen.</h2><p style="color:#747780;line-height:1.55;margin:0">Install the Coach Portal like an app, then turn on notifications for score approvals and important coach alerts.</p><div id="coachInstallHelp" style="font-size:13px;color:#747780;line-height:1.5;margin-top:12px"></div><div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:14px"><button id="coachInstall" class="button" type="button" hidden>Install Coach App</button><button id="coachPushEnable" class="button" type="button" hidden>Turn On Notifications</button><button id="coachPushTest" class="button" type="button" hidden style="background:#17191d">Send Test</button><button id="coachPushDisable" class="button" type="button" hidden style="background:#fff;color:#9d2028;border:1px solid #d8a8ab">Turn Off</button></div><div id="coachPushState" style="font-size:13px;color:#747780;margin-top:10px;min-height:20px">Checking this device…</div></div>';
+ const panel=notificationPanel(host,{portal:'coach',title:'Coach app & notifications',bottom:document.querySelector('main'),movable:document.getElementById('coach-app')});
  const q=id=>host.querySelector('#'+id),state=q('coachPushState'),help=q('coachInstallHelp');
  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
  const standalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
@@ -36,13 +38,13 @@ async function mount(){
  if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){state.textContent='This device/browser does not support web app notifications.';return}
  try{
    config=await api();
-   reg=await navigator.serviceWorker.register('/coach-sw.js',{scope:'/coaches'});
+   reg=await navigator.serviceWorker.register('/coach-sw.js',{scope:'/coaches',updateViaCache:'none'});
    await waitForActive(reg);
    sub=await reg.pushManager.getSubscription();
  }catch(e){state.textContent=e.message;return}
 
  const refresh=async()=>{
-   sub=await reg.pushManager.getSubscription();
+   sub=await reg.pushManager.getSubscription();panel.sync(sub);
    q('coachPushEnable').hidden=!!sub;
    q('coachPushTest').hidden=!sub;
    q('coachPushDisable').hidden=!sub;
@@ -55,7 +57,7 @@ async function mount(){
    if(!installPrompt)return;
    installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;showInstall();
  };
- const run=async fn=>{if(busy)return;busy=true;host.querySelectorAll('button').forEach(b=>b.disabled=true);try{await fn()}catch(e){state.textContent=e.message}finally{busy=false;host.querySelectorAll('button').forEach(b=>b.disabled=false)}};
+ const run=async fn=>{if(busy)return;busy=true;host.querySelectorAll('button').forEach(b=>b.disabled=true);try{await fn()}catch(e){state.textContent=e.message;panel.error()}finally{busy=false;host.querySelectorAll('button').forEach(b=>b.disabled=false)}};
  q('coachPushEnable').onclick=()=>run(async()=>{
    const permission=await Notification.requestPermission();if(permission!=='granted')throw Error('Notifications were not enabled. You can change permission in device settings.');
    const created=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(config.publicKey)});
@@ -63,6 +65,6 @@ async function mount(){
    await refresh();
  });
  q('coachPushDisable').onclick=()=>run(async()=>{if(sub){try{await api({action:'unsubscribe',endpoint:sub.endpoint,token:deviceToken()})}finally{await sub.unsubscribe()}}await refresh()});
- q('coachPushTest').onclick=()=>run(async()=>{if(!sub)return;const d=await api({action:'test',endpoint:sub.endpoint,token:deviceToken()});state.textContent=d.message});
+ q('coachPushTest').onclick=()=>run(async()=>{if(!sub)return;const d=await api({action:'test',endpoint:sub.endpoint,token:deviceToken()});state.textContent=d.message;if(d.status==='accepted')panel.tested(sub);else panel.error()});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();

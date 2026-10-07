@@ -129,5 +129,5 @@ async function reviewPendingScore(id,action){
 function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
 form.addEventListener('submit',async e=>{e.preventDefault();status.textContent='Submitting…';success.classList.remove('show');submitButton.disabled=true;try{const response=await fetch('/api/coach-submit',{method:'POST',body:new FormData(form)});const result=await response.json();if(!response.ok||!result.success)throw new Error(result.error||'Unable to submit.');status.textContent='';successTitle.textContent=typeSelect.value==='Score'?'Score published.':'Submitted.';successCopy.textContent=result.message||'Your submission was received.';success.classList.add('show');const keepType=typeSelect.value,keep={name:name.value,email:email.value,team:team.value,sport:sport.value};form.reset();setType(keepType);if(signedCoach){Object.entries(keep).forEach(([id,v])=>document.getElementById(id).value=v);codeField.style.display='none';}}catch(err){status.textContent=err.message||'Something went wrong. Please try again.';}finally{submitButton.disabled=false;}});setType('Score');loadCoachSession();
 </script>
-<script type="module" src="/assets/coach-push.js"></script></body>
+<script type="module" src="/assets/coach-push.js?v=20261007-panels"></script></body>
 </html>
