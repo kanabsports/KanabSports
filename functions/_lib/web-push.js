@@ -13,7 +13,7 @@ export async function sendPush(db,device,table='push_devices'){if(!validEndpoint
  // No payload: notification text is generic and provided by our service worker.
  const response=await fetch(device.endpoint,{method:'POST',headers:{Authorization:`vapid t=${input}.${signature}, k=${key.publicKey}`,TTL:'3600',Urgency:'normal'},redirect:'error',signal:AbortSignal.timeout(10000)});
  await response.body?.cancel();
- if([404,410].includes(response.status)){const safeTable=table==='coach_push_devices'?'coach_push_devices':'push_devices';await db.prepare(`DELETE FROM ${safeTable} WHERE id=?`).bind(device.id).run();return 'expired';}return response.ok?'accepted':'rejected';}
+ if([404,410].includes(response.status)){const safeTable=['coach_push_devices','owner_push_devices'].includes(table)?table:'push_devices';await db.prepare(`DELETE FROM ${safeTable} WHERE id=?`).bind(device.id).run();return 'expired';}return response.ok?'accepted':'rejected';}
 export async function notifyTeam(db,code,messageId){
  await pushSchema(db);
  const rows=((await db.prepare('SELECT id,endpoint,codes FROM push_devices').all()).results||[]).filter(device=>JSON.parse(device.codes).includes(code));

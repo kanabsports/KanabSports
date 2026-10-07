@@ -1,6 +1,7 @@
+import {notifyOwner} from '../_lib/owner-push.js';
 import {getCoach,ensureCoachCore} from '../_lib/coach-auth.js';
 const MAX_FILE_BYTES=5*1024*1024,ADMIN_EMAIL='howdy@kanabsports.com';
-export async function onRequestPost({request,env}){
+export async function onRequestPost({request,env,waitUntil}){
   if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({success:false,error:'Coach uploads are not configured yet.'},503);
   try{
     const form=await request.formData();if(clean(form.get('website'),100))return json({success:true,message:'Submitted.'});
@@ -40,6 +41,7 @@ export async function onRequestPost({request,env}){
     const payload={from:'Kanab Sports <website@kanabsports.com>',to:[ADMIN_EMAIL],reply_to:email,subject:`Coach upload — ${team} — ${sport}`,text,html};if(hasFile)payload.attachments=[{filename,content:toBase64(bytes)}];
     const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`coach-upload-${id}`},body:JSON.stringify(payload)});
     if(!sent.ok){await env.SPORTS_DB.prepare(`DELETE FROM coach_documents WHERE id=?`).bind(id).run();return json({success:false,error:'The submission email could not be delivered. Please try again.'},502)}
+    waitUntil(notifyOwner(env.SPORTS_DB,'document-'+id).catch(error=>console.error('Owner push failed',error.message)));
     return json({success:true,message:'Submitted. Kanab Sports received the update for approval.'});
   }catch(error){console.error('coach upload error',error);return json({success:false,error:'Something went wrong. Please try again.'},500)}
 }

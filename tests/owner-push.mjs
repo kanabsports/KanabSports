@@ -1,0 +1,24 @@
+// Run with Node 22+: node tests/owner-push.mjs. All delivery is mocked.
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {onRequest} from '../functions/api/owner-push.js';
+import {notifyOwner} from '../functions/_lib/owner-push.js';
+const sql=new DatabaseSync(':memory:');
+const db={prepare(query){return {args:[],bind(...args){this.args=args;return this},async run(){return sql.prepare(query).run(...this.args)},async first(){return sql.prepare(query).get(...this.args)},async all(){return {results:sql.prepare(query).all(...this.args)}}}}};
+sql.exec('CREATE TABLE admin_sessions (email TEXT,token_hash TEXT,expires_at TEXT)');
+const hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('owner-test'))).toString('hex');
+sql.prepare("INSERT INTO admin_sessions VALUES ('howdy@kanabsports.com',?,'2099-01-01')").run(hash);
+const request=(body,auth=true,origin='https://example.test')=>onRequest({env:{SPORTS_DB:db},request:new Request('https://example.test/api/owner-push',{method:body?'POST':'GET',headers:{...(auth?{Cookie:'ks_admin=owner-test'}:{}),Origin:origin,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})});
+assert.equal((await request(null,false)).status,401);
+assert((await (await request()).json()).publicKey);
+const body={action:'subscribe',endpoint:'https://web.push.apple.com/test-device',token:'a'.repeat(64)};
+assert.equal((await request(body,true,'https://untrusted.test')).status,403);
+assert.equal((await request({...body,endpoint:'https://example.test/internal'})).status,400);
+assert.equal((await request(body)).status,200);
+assert.equal((await request({...body,token:'b'.repeat(64)})).status,409);
+let sends=0,deliveryStatus=201;globalThis.fetch=async()=>{sends++;return new Response(null,{status:deliveryStatus})};
+await notifyOwner(db,'signup-1');await notifyOwner(db,'signup-1');assert.equal(sends,1);
+assert.equal((await request({...body,action:'test'})).status,200);assert.equal(sends,2);
+deliveryStatus=410;await notifyOwner(db,'signup-2');assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM owner_push_devices').get().n,0);
+assert.equal((await request(body)).status,200);assert.equal((await request({...body,action:'unsubscribe'})).status,200);assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM owner_push_devices').get().n,0);
+console.log('PASS: owner auth, origin guard, endpoint allowlist, device ownership, deduplicated alerts, test delivery, expired device cleanup, unsubscribe. No real notifications sent.');

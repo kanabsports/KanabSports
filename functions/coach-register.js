@@ -1,4 +1,5 @@
-export async function onRequestPost({request,env}){
+import {notifyOwner} from './_lib/owner-push.js';
+export async function onRequestPost({request,env,waitUntil}){
   try{
     if(!env.SPORTS_DB||!env.RESEND_API_KEY||!env.TURNSTILE_SECRET_KEY)return json({success:false,error:'Coach access requests are not configured yet.'},503);
     const form=await request.formData();if(clean(form.get('website'),100))return json({success:true});
@@ -18,6 +19,7 @@ export async function onRequestPost({request,env}){
     const html=`<div style="font-family:Arial,sans-serif;line-height:1.55;color:#111;max-width:660px"><div style="font-size:12px;font-weight:800;color:#a51420;text-transform:uppercase">Coach access request</div><h2>${esc(name)} · ${esc(sport)}</h2><table style="border-collapse:collapse;margin:18px 0">${htmlRows}</table>${message?`<div style="padding:14px;background:#f5f5f5;border-radius:8px"><strong>Notes</strong><br>${esc(message)}</div>`:''}<p style="color:#666">Verify this person using their team information before approving. Approval emails them a link to set a coach password. Head Coaches and Coaches can later assign score-only assistants.</p><div style="margin-top:24px"><a href="${esc(approve)}" style="display:block;background:#16833a;color:#fff;text-decoration:none;text-align:center;font-size:20px;font-weight:800;padding:18px 24px;border-radius:10px">✓ Approve coach access</a><div style="margin-top:28px;text-align:center"><a href="${esc(reject)}" style="color:#9d2028;text-decoration:none;font-size:13px;font-weight:700;padding:10px 16px;border:1px solid #d8a8ab;border-radius:8px">Deny request</a></div></div></div>`;
     const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`coach-access-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:['howdy@kanabsports.com'],reply_to:email,subject:`Coach access request — ${name} — ${sport}`,text,html})});
     if(!sent.ok){await env.SPORTS_DB.prepare(`DELETE FROM coach_access_requests WHERE id=?`).bind(id).run();return json({success:false,error:'The request email could not be delivered. Please try again.'},502)}
+    waitUntil(notifyOwner(env.SPORTS_DB,'signup-'+id).catch(error=>console.error('Owner push failed',error.message)));
     return json({success:true,message:'Your request was sent. Any older access for this email was cleared first. Kanab Sports will verify your team information and email fresh access if approved.'});
   }catch(error){console.error('coach access request error',error);return json({success:false,error:'Something went wrong. Please try again.'},500)}
 }
