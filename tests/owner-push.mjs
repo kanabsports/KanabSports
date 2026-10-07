@@ -16,7 +16,7 @@ assert.equal((await request(body,true,'https://untrusted.test')).status,403);
 assert.equal((await request({...body,endpoint:'https://example.test/internal'})).status,400);
 assert.equal((await request(body)).status,200);
 assert.equal((await request({...body,token:'b'.repeat(64)})).status,409);
-let sends=0,deliveryStatus=201;globalThis.fetch=async()=>{sends++;return new Response(null,{status:deliveryStatus})};
+let sends=0,deliveryStatus=201;globalThis.fetch=async(url,init)=>{assert.equal(init.redirect,'manual','Cloudflare requires manual redirects; never forward VAPID credentials');new Request(url,init);sends++;return new Response(null,{status:deliveryStatus})};
 await notifyOwner(db,'signup-1');await notifyOwner(db,'signup-1');assert.equal(sends,1);
 assert.equal((await request({...body,action:'test'})).status,200);assert.equal(sends,2);
 deliveryStatus=410;await notifyOwner(db,'signup-2');assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM owner_push_devices').get().n,0);
