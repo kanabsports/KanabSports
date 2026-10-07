@@ -22,3 +22,12 @@
 
 /business.html
   Cache-Control: private, no-store, max-age=0
+
+/owner-sw.js
+  Cache-Control: no-cache
+
+/owner.webmanifest
+  Cache-Control: no-cache
+
+/assets/owner-push.js
+  Cache-Control: no-cache

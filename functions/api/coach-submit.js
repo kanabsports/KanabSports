@@ -1,5 +1,6 @@
+import {notifyOwner} from '../_lib/owner-push.js';
 const ADMIN_EMAIL='howdy@kanabsports.com',COOKIE='ks_coach';
-export async function onRequestPost({request,env}){
+export async function onRequestPost({request,env,waitUntil}){
   if(!env.SPORTS_DB||!env.RESEND_API_KEY)return json({success:false,error:'Coach submissions are not configured yet.'},503);
   try{
     const form=await request.formData();const clean=(v,m=1500)=>String(v||'').replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,m);await ensureSchema(env.SPORTS_DB);
@@ -21,6 +22,7 @@ export async function onRequestPost({request,env}){
     const html=`<div style="font-family:Arial,sans-serif;line-height:1.55;max-width:680px"><div style="font-size:12px;font-weight:800;color:#a51420;text-transform:uppercase">Coach submission</div><h2>${esc(team)} · ${esc(type)}</h2><table style="border-collapse:collapse">${htmlRows}</table><div style="margin:18px 0;padding:14px;background:#f5f5f5;border-radius:8px">${esc(message)}</div><a href="${esc(approve)}" style="display:block;background:#16833a;color:#fff;text-decoration:none;text-align:center;font-size:20px;font-weight:800;padding:18px;border-radius:10px">✓ Approve & Publish</a><div style="text-align:center;margin-top:22px"><a href="${esc(reject)}" style="color:#9d2028;font-weight:700">Deny submission</a></div></div>`;
     const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':`coach-submit-${id}`},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[ADMIN_EMAIL],reply_to:email,subject:`Coach submission — ${type} — ${sport}`,text,html})});
     if(!sent.ok){await env.SPORTS_DB.prepare(`DELETE FROM coach_submissions WHERE id=?`).bind(id).run();return json({success:false,error:'The submission email could not be delivered. Please try again.'},502)}
+    waitUntil(notifyOwner(env.SPORTS_DB,'submission-'+id).catch(error=>console.error('Owner push failed',error.message)));
     return json({success:true,message:'Submitted. Kanab Sports received it for approval.'});
   }catch(error){console.error('coach submit error',error);return json({success:false,error:'Something went wrong. Please try again.'},500)}
 }

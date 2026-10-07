@@ -5,7 +5,7 @@ export async function onRequest(context) {
     const response=await context.next();
     const headers=new Headers(response.headers);
     headers.set('Cache-Control','private, no-store, max-age=0');
-    headers.set('X-Owner-Console-Version','2026-10-07-owner-v3');
+    headers.set('X-Owner-Console-Version','2026-10-07-owner-pwa-v1');
     return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
   }
   const response = await context.next();
