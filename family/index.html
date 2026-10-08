@@ -220,6 +220,7 @@ const q=new URLSearchParams(location.search),invite=q.get('code');
 async function applyInvite(){
  if(!invite)return;
  const code=invite.toUpperCase(),team=await resolveTeamCode(code);
+ if(!team){openAdd(code);await resolveTeamCode(code,true);return;}
  if(team){const a=normalized(read()),child=q.get('child')||'';if(!a.some(x=>x.code===code&&x.child===child)){newInviteId='entry-'+crypto.randomUUID();a.push({code,child,addedAt:Date.now(),entryId:newInviteId});saveNormalized(a)}}
  history.replaceState({},'',location.pathname);
 }
