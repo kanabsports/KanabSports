@@ -1,3 +1,4 @@
+import {identitySuggestions} from '../_lib/student-identity.js';
 import {schoolSchema,schoolSession,schoolRoles,schoolAudit,trustedOrigin,messagingGate,reusableContacts} from '../_lib/school-access.js';
 import {accessSchema} from '../_lib/parent-access.js';
 import {json,sha256} from '../_lib/coach-auth.js';
@@ -17,7 +18,7 @@ export async function onRequest({request,env}){
   const contacts=selected?(await db.prepare('SELECT m.id,m.email,m.student_ref,m.season,m.status,m.expires,m.approved_by FROM guardian_memberships m JOIN school_approved_memberships a ON a.membership_id=m.id WHERE a.batch_id=? AND m.team_code=?').bind(selected.active_batch||'',code).all()).results:[];
   const staff=principal?(await db.prepare('SELECT id,email,role,active,expires,parent_grant FROM school_staff WHERE school_id=? ORDER BY created DESC').bind(schoolId).all()).results:[];
   const audit=(await db.prepare('SELECT actor,action,detail,created,team_code FROM school_audit WHERE school_id=? ORDER BY created DESC LIMIT 100').bind(schoolId).all()).results;
-  return json({school:roles[0].school_name,principal:!!principal,teams,selected,students,contacts,staff,audit,reusable:selected?await reusableContacts(db,selected):[],gate:selected?await messagingGate(db,code):null});
+  return json({school:roles[0].school_name,principal:!!principal,teams,selected,students,contacts,staff,audit,identityMatches:selected?await identitySuggestions(db,selected):[],reusable:selected?await reusableContacts(db,selected):[],gate:selected?await messagingGate(db,code):null});
  }
  if(request.method!=='POST')return json({error:'Method not allowed.'},405);
  if(!trustedOrigin(request))return json({error:'Open Kanab Sports.'},403);
@@ -35,6 +36,21 @@ export async function onRequest({request,env}){
   const id=crypto.randomUUID();await db.batch([db.prepare("INSERT INTO school_staff VALUES(?,?,?,'contacts',1,?,?,?,?,?)").bind(id,schoolId,email,session.email,principal.id,expires,evidence,Date.now()),schoolAudit(db,schoolId,null,session.email,'delegate_contacts',id)]);return json({success:true,message:'Employee authorized to upload and approve this school’s contacts. No email was sent. They can sign in at the School Portal.'});
  }
  const code=String(b.team_code||'').trim().toUpperCase(),team=await db.prepare("SELECT * FROM school_teams WHERE team_code=? AND school_id=? AND kind='school'").bind(code,schoolId).first();if(!team)return json({error:'Team not found in your school.'},404);
+ if(b.action==='match_students'){
+  if(team.active_batch||b.revision!==team.revision||b.confirmed!==true)return json({error:'Match students on the current unapproved roster. Reload and confirm the identities.'},409);
+  if(!Array.isArray(b.matches)||!b.matches.length||b.matches.length>100)return json({error:'Select returning students to match.'},400);
+  const suggestions=await identitySuggestions(db,team),mapping=new Map(),targets=new Set();
+  for(const match of b.matches){
+   const candidate=suggestions.find(r=>r.student_ref===match.from)?.candidates.find(p=>p.student_ref===match.to);
+   if(!candidate||mapping.has(match.from)||targets.has(match.to))return json({error:'A student match is invalid or duplicated. Review each student separately.'},400);
+   mapping.set(match.from,candidate);targets.add(match.to);
+  }
+  const current=(await db.prepare('SELECT student_ref,student_name FROM school_rosters WHERE team_code=? AND revision=?').bind(code,team.revision).all()).results||[];
+  const rows=current.map(r=>{const prior=mapping.get(r.student_ref);return prior?{student_ref:prior.student_ref,student_name:prior.student_name}:r});
+  const revision=team.revision+1;
+  await db.batch([db.prepare('INSERT INTO school_roster_versions SELECT team_code,CASE WHEN revision=? AND active_batch IS NULL THEN revision+1 ELSE NULL END FROM school_teams WHERE team_code=? AND school_id=?').bind(team.revision,code,schoolId),db.prepare('UPDATE school_teams SET revision=?,approved_revision=0,active_batch=NULL WHERE team_code=? AND school_id=? AND revision=? AND active_batch IS NULL').bind(revision,code,schoolId,team.revision),db.prepare("INSERT INTO school_rosters SELECT ?,?,json_extract(value,'$.student_ref'),json_extract(value,'$.student_name') FROM json_each(?)").bind(code,revision,JSON.stringify(rows)),schoolAudit(db,schoolId,code,session.email,'match_returning_students',JSON.stringify(b.matches))]);
+  return json({success:true,message:'Returning students matched to their existing Pep IDs. Review the verified contacts below or download the updated form. Messaging remains locked until contact approval.'});
+ }
  if(b.action==='pause'){
   await db.batch([db.prepare('UPDATE school_teams SET approved_revision=0,active_batch=NULL WHERE team_code=? AND school_id=?').bind(code,schoolId),schoolAudit(db,schoolId,code,session.email,'pause_messaging','School paused team access')]);return json({success:true});
  }
