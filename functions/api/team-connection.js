@@ -1,10 +1,11 @@
+import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
 import {ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
 
 export async function onRequestGet({request,env}){
   if(!env.SPORTS_DB)return json({success:false,error:'Team connection is temporarily unavailable.'},503);
   const db=env.SPORTS_DB;
   try{
-    await ensureCoachCore(db);await schema(db);
+    await ensureCoachCore(db);await schema(db);await accessSchema(db);
     const code=clean(new URL(request.url).searchParams.get('code'),40).toUpperCase();
     if(!/^[A-Z0-9_-]{1,32}$/.test(code))return json({success:false,error:'Invalid team code.'},400);
 
@@ -18,6 +19,9 @@ export async function onRequestGet({request,env}){
 
     const primary=coaches[0],team=primary.team_name||primary.organization||primary.sport;
     const category=/^KHS$/i.test(primary.organization)||/kanab high school/i.test(primary.organization)?'school':'rec';
+
+    const parent=await parentSession(request,db);
+    if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?'Your school must approve your guardian access before you can view private team information.':'Sign in to My Family, then request school-approved guardian access.'},parent?403:401);
 
     const latest=await db.prepare(`
       SELECT g.source_document_id

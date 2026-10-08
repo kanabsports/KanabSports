@@ -149,15 +149,16 @@ function openAdd(prefill='',child=''){addMode='team';$('addPanel').querySelector
 function openKid(){openAdd();addMode='kid';$('addPanel').querySelector('.eyebrow').textContent='ADD A KID';$('addTitle').textContent='Add a kid.';$('addTitle').nextElementSibling.textContent='Use a nickname, initials, or leave it blank. You can connect school or rec later.';$('connectionFields').hidden=true;$('addForm').querySelector('[type=submit]').textContent='Add Kid';setTimeout(()=>$('childLabel').focus(),25)}
 async function resolveTeamCode(code,refresh=false){
  code=String(code||'').trim().toUpperCase();if(!code||code==='__KID__')return null;
- if(registry[code]&&!refresh)return registry[code];
- try{const r=await fetch('/api/team-connection?code='+encodeURIComponent(code),{cache:'no-store'}),d=await r.json();if(!r.ok||!d.success||!d.team)return registry[code]||null;registry[code]=d.team;return registry[code]}catch{return registry[code]||null}
+ if(CONNECTIONS[code])return CONNECTIONS[code];
+ try{const r=await fetch('/api/team-connection?code='+encodeURIComponent(code),{cache:'no-store'}),d=await r.json();if(!r.ok||!d.success||!d.team){delete registry[code];$('addStatus').textContent=d.error||'That team is unavailable.';if(d.code==='GUARDIAN_APPROVAL_REQUIRED'){const status=$('addStatus');status.textContent=d.error;if(r.status===403){const button=document.createElement('button');button.type='button';button.className='btn ghost';button.textContent='Request access';button.onclick=async()=>{button.disabled=true;try{const response=await fetch('/api/guardian-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'request',team_code:code})});const result=await response.json();status.textContent=result.message||result.error}catch{status.textContent='Could not request access. Please try again.'}};status.append(button)}}return null;}registry[code]=d.team;return registry[code]}catch{delete registry[code];return null}
 }
-async function hydrateCodes(codes,refresh=false){for(const code of [...new Set(codes.map(x=>String(x||'').trim().toUpperCase()).filter(x=>x&&x!=='__KID__'))])if(refresh||!registry[code])await resolveTeamCode(code,refresh)}
+async function hydrateCodes(codes,refresh=false){for(const code of [...new Set(codes.map(x=>String(x||'').trim().toUpperCase()).filter(x=>x&&x!=='__KID__'))])if(!CONNECTIONS[code])await resolveTeamCode(code,refresh)}
 async function addConnections(){
  const school=$('schoolCode').value.trim().toUpperCase(),rec=$('teamCode').value.trim().toUpperCase(),codes=[school,rec].filter(Boolean);
  if(!codes.length){$('addStatus').textContent='Enter a school code or a rec code. You don’t need both.';return;}
  $('addStatus').textContent='Checking team code…';
  await hydrateCodes(codes);
+ for(const [code,category] of [[school,'school'],[rec,'rec']])if(code&&!registry[code])return;
  for(const [code,category] of [[school,'school'],[rec,'rec']])if(code&&registry[code]?.category!==category){$('addStatus').textContent='That '+categoryLabel(category).toLowerCase()+' code is not active. Check the code and try again. Nothing has been added.';return;}
  for(const code of codes)add(code,$('childLabel').value,false);
  closeAdd();activeCategory='';go('home');render();
@@ -209,7 +210,7 @@ $('undoBtn').onclick=()=>{try{const x=JSON.parse(localStorage.getItem(TRASH)||'n
 $('connectionTabs').onclick=e=>{const b=e.target.closest('[data-category]');if(!b)return;activeCategory=b.dataset.category;go('home');render();};
 $('connectionTabs').onkeydown=e=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...$('connectionTabs').querySelectorAll('[role=tab]')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].click();tabs[next].focus();};
 $('childChips').onclick=e=>{const b=e.target.closest('[data-child]');if(!b)return;$('childChips').querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));render(b.dataset.child)};
-$('accountPill').onclick=()=>account?go('settings'):openAccount();$('syncButton').onclick=async()=>{if(!account){openAccount();return}try{clearTimeout(syncTimer);await syncChain;await api({action:'logout'});account=null;localStorage.removeItem(KEY);localStorage.removeItem(PROFILE);localStorage.removeItem('ksFamilyOwner');render();document.dispatchEvent(new Event('familyconnectionschanged'))}catch{}};
+$('accountPill').onclick=()=>account?go('settings'):openAccount();$('syncButton').onclick=async()=>{if(!account){openAccount();return}try{clearTimeout(syncTimer);await syncChain;await api({action:'logout'});account=null;for(const code of Object.keys(registry))if(!CONNECTIONS[code])delete registry[code];localStorage.removeItem(KEY);localStorage.removeItem(PROFILE);localStorage.removeItem('ksFamilyOwner');render();document.dispatchEvent(new Event('familyconnectionschanged'))}catch{}};
 document.querySelectorAll('[data-close-account]').forEach(b=>b.onclick=closeAccount);$('accountPanel').onclick=e=>{if(e.target===$('accountPanel'))closeAccount()};
 $('accountForm').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;$('accountStatus').textContent='Sending verification code…';try{const name=$('parentName').value.trim(),email=$('parentEmail').value.trim();const d=await api({action:'request_code',name,email});challenge=d.challenge;localStorage.setItem(PROFILE,JSON.stringify({name,email}));accountView('code');$('codeSentText').textContent='We sent an 8-digit code to '+email+'. It expires in 10 minutes.';$('parentCode').focus()}catch(err){$('accountStatus').textContent=err.message}finally{b.disabled=false}};
 $('backAccount').onclick=()=>{accountView('setup');$('codeStatus').textContent='';$('accountStatus').textContent=''};
@@ -225,7 +226,8 @@ async function applyInvite(){
 async function loadFeed(){
  let failed=false;
  try{const dynamic=normalized(read()).map(x=>x.code).filter(code=>code.startsWith('KS-'));await hydrateCodes(dynamic,true)}catch{failed=true}
- feedLoaded=true;feedError=failed?'Some coach updates could not refresh. Please try again shortly.':'';render();
+ const locked=normalized(read()).some(x=>x.code!=='__KID__'&&!registry[x.code]);
+ feedLoaded=true;feedError=locked?'Some private teams need guardian approval. Sign in, then use Add Team with your code to request access.':failed?'Some coach updates could not refresh. Please try again shortly.':'';render();
 }
 (async()=>{
  await hydrateCodes(normalized(read()).map(x=>x.code));

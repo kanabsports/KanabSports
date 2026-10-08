@@ -1,9 +1,11 @@
+import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
+import {CONNECTIONS} from '../../assets/family-connections.js';
 import {pushSchema,keys,digest,validEndpoint,sendPush} from '../_lib/web-push.js';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function onRequest({request,env}){
  if(!env.SPORTS_DB)return json({error:'Notifications are temporarily unavailable.'},503);
  const db=env.SPORTS_DB;
- try{await pushSchema(db);
+ try{await pushSchema(db);await accessSchema(db);
  if(request.method==='GET')return json({publicKey:(await keys(db)).publicKey,supportsTeamNotifications:true});
  if(request.method!=='POST')return json({error:'Method not allowed.'},405);
  if(new URL(request.url).origin!=='https://kanabsports.com'||request.headers.get('Origin')!=='https://kanabsports.com')return json({error:'Open Kanab Sports to manage notifications.'},403);
@@ -17,7 +19,9 @@ export async function onRequest({request,env}){
  if(body.action==='subscribe'){
   const codes=[...new Set((Array.isArray(body.codes)?body.codes:[]).map(x=>String(x||'').trim().toUpperCase()))].filter(Boolean);
   if(!codes.length||codes.length>25||codes.some(code=>!/^[A-Z0-9_-]{1,32}$/.test(code)))return json({error:'Choose between 1 and 25 valid team codes for notifications.'},400);
-  await db.prepare('INSERT INTO push_devices(id,endpoint,token_hash,codes,updated) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET codes=excluded.codes,updated=excluded.updated WHERE push_devices.token_hash=excluded.token_hash').bind(id,body.endpoint,tokenHash,JSON.stringify(codes),Date.now()).run();
+  const parent=await parentSession(request,db);
+  for(const code of codes)if(!CONNECTIONS[code]&&!await hasMembership(db,parent?.email,code))return json({error:'School-approved guardian access is required for private team notifications.'},403);
+  await db.prepare('INSERT INTO push_devices(id,endpoint,token_hash,codes,updated,parent_email) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET codes=excluded.codes,updated=excluded.updated,parent_email=excluded.parent_email WHERE push_devices.token_hash=excluded.token_hash').bind(id,body.endpoint,tokenHash,JSON.stringify(codes),Date.now(),parent?.email||null).run();
   const stored=await db.prepare('SELECT token_hash FROM push_devices WHERE id=?').bind(id).first();if(stored?.token_hash!==tokenHash)return json({error:'This subscription is already registered.'},409);
   return json({success:true});
  }
