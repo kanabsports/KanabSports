@@ -1,3 +1,4 @@
+import {schoolSchema} from '../functions/_lib/school-access.js';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {accessSchema,hasMembership} from '../functions/_lib/parent-access.js';
@@ -8,7 +9,7 @@ import {notifyTeam} from '../functions/_lib/web-push.js';
 import {onRequest as push} from '../functions/api/push.js';
 const sqlite=new DatabaseSync(':memory:');
 const db={prepare(sql){const statement=sqlite.prepare(sql);let args=[];return {bind(...values){args=values;return this},async run(){return statement.run(...args)},async first(){return statement.get(...args)||null},async all(){return {results:statement.all(...args)}}}},async batch(statements){sqlite.exec('BEGIN');try{const result=await Promise.all(statements.map(s=>s.run()));sqlite.exec('COMMIT');return result}catch(e){sqlite.exec('ROLLBACK');throw e}}};
-await ensureCoachCore(db);await accessSchema(db);
+await ensureCoachCore(db);await accessSchema(db);await schoolSchema(db);await db.prepare("INSERT INTO school_teams(team_code,kind,evidence,assigned_by) VALUES('KS-TEST','rec','Synthetic city recommendation','owner')").run();
 sqlite.prepare("INSERT INTO coach_access_requests(id,name,email,organization,sport,role,status,team_code) VALUES('coach','Coach','coach@example.test','KHS','Soccer','Coach','approved','KS-TEST')").run();
 const token='a'.repeat(64),hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(token))).toString('hex');
 sqlite.prepare('INSERT INTO parent_sessions VALUES(?,?,?)').run(hash,'parent@example.test',Date.now()+60000);

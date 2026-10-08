@@ -1,3 +1,4 @@
+import {teamPolicy} from './school-access.js';
 export async function accessSchema(db){
  for(const sql of [
  'CREATE TABLE IF NOT EXISTS parent_sessions (hash TEXT PRIMARY KEY,email TEXT NOT NULL,expires INTEGER NOT NULL)',
@@ -14,5 +15,11 @@ export async function parentSession(request,db){
 }
 export async function hasMembership(db,email,code){
  if(!email)return false;
+ const policy=await teamPolicy(db,code);
+ if(!policy)return false;
+ if(policy.kind==='school'){
+  if(!policy.active_batch||policy.approved_revision!==policy.revision||!policy.revision||Date.parse(policy.expires+'T00:00:00Z')<=Date.now())return false;
+  return !!await db.prepare(`SELECT m.id FROM guardian_memberships m JOIN school_approved_memberships a ON a.membership_id=m.id WHERE m.email=? AND m.team_code=? AND m.status='approved' AND m.expires>? AND a.batch_id=? AND NOT EXISTS(SELECT 1 FROM school_parent_optouts o WHERE o.email=m.email AND o.team_code=m.team_code AND o.student_ref=m.student_ref AND o.school_id=? AND o.school_year=?) LIMIT 1`).bind(email,code,Date.now(),policy.active_batch,policy.school_id,policy.school_year).first();
+ }
  return !!await db.prepare("SELECT id FROM guardian_memberships WHERE email=? AND team_code=? AND status='approved' AND expires>? LIMIT 1").bind(email,code,Date.now()).first();
 }

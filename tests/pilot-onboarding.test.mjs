@@ -1,3 +1,4 @@
+import {schoolSchema} from '../functions/_lib/school-access.js';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {ensureCoachCore} from '../functions/_lib/coach-auth.js';
@@ -9,7 +10,7 @@ import {onRequestPost as register} from '../functions/coach-register.js';
 import {parseRosterCSV,validateRosterRows} from '../assets/guardian-import.mjs';
 const sqlite=new DatabaseSync(':memory:');
 const db={prepare(sql){const statement=sqlite.prepare(sql);let args=[];return {bind(...values){args=values;return this},async run(){return statement.run(...args)},async first(){return statement.get(...args)||null},async all(){return {results:statement.all(...args)}}}},async batch(statements){sqlite.exec('BEGIN');try{const result=await Promise.all(statements.map(s=>s.run()));sqlite.exec('COMMIT');return result}catch(e){sqlite.exec('ROLLBACK');throw e}}};
-await ensureCoachCore(db);await accessSchema(db);
+await ensureCoachCore(db);await accessSchema(db);await schoolSchema(db);await db.prepare("INSERT INTO school_teams(team_code,kind,evidence,assigned_by) VALUES('KS-TEST','rec','Synthetic city recommendation','owner')").run();
 sqlite.prepare("INSERT INTO coach_access_requests(id,name,email,organization,sport,role,status,team_code) VALUES('coach','Coach','coach@example.test','KHS','Soccer','Coach','approved','KS-TEST')").run();
 const env={SPORTS_DB:db,RESEND_API_KEY:'mock',TURNSTILE_SECRET_KEY:'mock'};
 const request=(path,body,cookie='')=>new Request('https://kanabsports.com'+path,{method:'POST',headers:{origin:'https://kanabsports.com','content-type':'application/json',cookie},body:JSON.stringify(body)});
@@ -24,7 +25,7 @@ const hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().en
 sqlite.prepare("INSERT INTO admin_sessions(id,email,token_hash,expires_at) VALUES('owner','howdy@kanabsports.com',?,datetime('now','+1 hour'))").run(hash);
 const payload={rows,evidence:'School-authorized synthetic test',confirmed:true};
 assert.equal((await call(roster,'/api/guardian-import',payload)).status,401);
-assert.equal((await call(roster,'/api/guardian-import',{...payload,rows:[...rows,{...rows[0],email:'second@example.test',team_code:'KS-MISSING'}]},'ks_admin=owner-token')).status,400);
+assert.equal((await call(roster,'/api/guardian-import',{...payload,rows:[...rows,{...rows[0],email:'second@example.test',team_code:'KS-MISSING'}]},'ks_admin=owner-token')).status,403);
 assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM guardian_memberships').get().n,0);
 let r=await call(roster,'/api/guardian-import',payload,'ks_admin=owner-token');assert.equal(r.status,200);assert.equal((await r.json()).imported,1);
 r=await call(roster,'/api/guardian-import',payload,'ks_admin=owner-token');assert.equal((await r.json()).skipped,1);

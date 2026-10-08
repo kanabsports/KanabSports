@@ -1,3 +1,4 @@
+import {teamPolicy} from '../_lib/school-access.js';
 import {accessSchema,parentSession} from '../_lib/parent-access.js';
 import {authenticate} from './admin-dashboard.js';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store'}});
@@ -32,6 +33,7 @@ export async function onRequest({request,env}){
   await db.batch([db.prepare("UPDATE guardian_memberships SET status='revoked' WHERE id=?").bind(id),db.prepare('INSERT INTO guardian_access_audit VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),id,owner.email,'revoke',Date.now())]);return json({success:true});
  }
  if(body.action!=='approve')return json({error:'Unknown action.'},400);
+ const policy=await teamPolicy(db,code);if(!policy||policy.kind==='school')return json({error:'School approvals require the School Portal. Assign rec or travel teams in School Setup before approving contacts here.'},403);
  const email=String(body.email||'').trim().toLowerCase(),student=String(body.student_ref||'').trim(),season=String(body.season||'').trim(),evidence=String(body.evidence||'').trim(),expires=Date.parse(body.expires);
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!student||student.length>100||!season||season.length>80||evidence.length<10||evidence.length>500||!Number.isFinite(expires)||expires<=Date.now()||expires>Date.now()+366*86400000||!body.confirmed)return json({error:'Provide a guardian email, school student reference, season, school authorization reference and an expiry within one year. Confirm school authorization.'},400);
  const team=await db.prepare("SELECT id FROM coach_access_requests WHERE team_code=? AND status='approved' LIMIT 1").bind(code).first();if(!team)return json({error:'An active coach-created team code is required.'},400);

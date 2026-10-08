@@ -1,3 +1,5 @@
+import {messagingGate} from '../_lib/school-access.js';
+import {accessSchema} from '../_lib/parent-access.js';
 import {findBlockedWords,LANGUAGE_NOTE} from '../../assets/pep-language.mjs';
 import {getCoach,ensureCoachCore,sameOrigin,clean,json} from '../_lib/coach-auth.js';
 import {notifyTeam} from '../_lib/web-push.js';
@@ -6,7 +8,7 @@ export async function onRequest({request,env}){
   if(!env.SPORTS_DB)return json({success:false,error:'Coach messaging is temporarily unavailable.'},503);
   const db=env.SPORTS_DB;
   try{
-    await ensureCoachCore(db);await schema(db);
+    await ensureCoachCore(db);await schema(db);await accessSchema(db);
     const coach=await getCoach(request,db);
     if(!coach)return json({success:false,error:'Sign in with your coach account first.'},401);
     const teamCode=await ensureTeamCode(db,coach);
@@ -20,7 +22,7 @@ export async function onRequest({request,env}){
         ORDER BY datetime(created_at) DESC
         LIMIT 50
       `).bind(teamCode).all()).results||[];
-      return json({success:true,teamCode,team,sport:coach.sport,messages:rows,inviteUrl:`${new URL(request.url).origin}/family/?code=${encodeURIComponent(teamCode)}`});
+      return json({success:true,gate:await messagingGate(db,teamCode),teamCode,team,sport:coach.sport,messages:rows,inviteUrl:`${new URL(request.url).origin}/family/?code=${encodeURIComponent(teamCode)}`});
     }
 
     if(request.method!=='POST')return json({success:false,error:'Method not allowed.'},405);
@@ -28,6 +30,7 @@ export async function onRequest({request,env}){
     const body=await request.json(),action=clean(body.action,30);
     if(action!=='post')return json({success:false,error:'Unknown action.'},400);
 
+    const gate=await messagingGate(db,teamCode);if(!gate.allowed)return json({success:false,code:'SCHOOL_APPROVAL_REQUIRED',error:gate.reason},403);
     const message=clean(body.body,1200);
     if(!message)return json({success:false,error:'Write a message first.'},400);
     if(findBlockedWords(message).length)return json({success:false,code:'BLOCKED_LANGUAGE',error:LANGUAGE_NOTE},422);
@@ -35,8 +38,10 @@ export async function onRequest({request,env}){
     if(Number(recent?.n||0)>=5)return json({success:false,error:'Please wait a minute before posting another update.'},429);
 
     const id=crypto.randomUUID();
-    await db.prepare(`INSERT INTO coach_team_messages(id,coach_id,team_code,author,body,created_at) VALUES(?,?,?,?,?,datetime('now'))`)
-      .bind(id,coach.id,teamCode,coach.name,message).run();
+    const inserted=await db.prepare(`INSERT INTO coach_team_messages(id,coach_id,team_code,author,body,created_at)
+      SELECT ?,?,?,?,?,datetime('now') WHERE EXISTS(SELECT 1 FROM school_teams t WHERE t.team_code=? AND (t.kind IN ('rec','travel') OR (t.kind='school' AND t.revision>0 AND t.revision=t.approved_revision AND t.active_batch IS NOT NULL AND t.expires>date('now')))) RETURNING id`)
+      .bind(id,coach.id,teamCode,coach.name,message,teamCode).first();
+    if(!inserted)return json({success:false,error:'School approval changed. Reload before sending.'},409);
 
     let pushed={accepted:0,failed:0};
     try{pushed=await notifyTeam(db,teamCode,id)}catch{}

@@ -1,3 +1,4 @@
+import {teamPolicy} from '../_lib/school-access.js';
 import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
 import {ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
 
@@ -18,7 +19,7 @@ export async function onRequestGet({request,env}){
     if(!coaches.length)return json({success:false,error:'That team code is not active.'},404);
 
     const primary=coaches[0],team=primary.team_name||primary.organization||primary.sport;
-    const category=/^KHS$/i.test(primary.organization)||/kanab high school/i.test(primary.organization)?'school':'rec';
+    const policy=await teamPolicy(db,code);const category=policy?.kind==='school'?'school':'rec';
 
     const parent=await parentSession(request,db);
     if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?'Your school must approve your guardian access before you can view private team information.':'Sign in to My Family, then request school-approved guardian access.'},parent?403:401);
