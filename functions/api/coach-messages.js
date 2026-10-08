@@ -1,3 +1,4 @@
+import {findBlockedWords,LANGUAGE_NOTE} from '../../assets/pep-language.mjs';
 import {getCoach,ensureCoachCore,sameOrigin,clean,json} from '../_lib/coach-auth.js';
 import {notifyTeam} from '../_lib/web-push.js';
 
@@ -29,6 +30,7 @@ export async function onRequest({request,env}){
 
     const message=clean(body.body,1200);
     if(!message)return json({success:false,error:'Write a message first.'},400);
+    if(findBlockedWords(message).length)return json({success:false,code:'BLOCKED_LANGUAGE',error:LANGUAGE_NOTE},422);
     const recent=await db.prepare(`SELECT count(*) AS n FROM coach_team_messages WHERE coach_id=? AND datetime(created_at)>=datetime('now','-1 minute')`).bind(coach.id).first();
     if(Number(recent?.n||0)>=5)return json({success:false,error:'Please wait a minute before posting another update.'},429);
 
