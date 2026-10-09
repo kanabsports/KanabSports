@@ -71,7 +71,7 @@ assert.equal((await call('parentA','parent',{...send,message:'changed retry'})).
 let history=(await call('coachA','coach',null,'&conversation='+c)).data.messages;
 assert.equal(history.length,1);assert.equal(history[0].sender_name,'parentA Fiction');assert.equal(history[0].sender_role,'parent');assert.equal(history[0].email_status,'accepted');assert.equal(history[0].push_status,'accepted');
 assert.equal((await call('otherA','parent',{...send,conversation:other})).status,409);
-const reply={action:'send',conversation:c,message_id:crypto.randomUUID(),message:'Fictional coach reply'};
+const reply={action:'send',conversation:c,message_id:crypto.randomUUID(),message:'Fictional coach reply',category:'general',subject:'Practice question'};
 assert.equal((await call('coachA','coach',reply)).status,200);assert.equal(mail.at(-1).body.to[0],'parentA@example.test');assert.ok(pushCalls.at(-1).endsWith('fictional-parent'));
 assert.equal((await call('parentA','parent',null,'&conversation='+c)).data.messages[1].sender_name,'Casey Fiction');
 emailMode='reject';pushMode='gone';
@@ -133,3 +133,5 @@ sqlite.exec('DELETE FROM private_message_limits');
 for(let i=0;i<30;i++)await call('parentB','parent',{action:'unknown'});
 assert.equal((await call('parentB','parent',{action:'unknown'})).status,429);
 console.log('PASS: fictional parent/coach replies; approved selector; team/org/family/assistant isolation; school and unknown-kind denial; CSRF; expiry/revocation; sender attribution; retry deduplication; pagination; rate limiting; private push binding/test/cleanup; targeted email links; provider failures; deferred delivery suppression. All external delivery mocked.');
+
+export {db,sqlite,env,tokens,call};

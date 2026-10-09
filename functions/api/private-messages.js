@@ -1,3 +1,4 @@
+import {CATEGORIES} from '../_lib/notification-preferences.js';
 import {findBlockedWords,LANGUAGE_NOTE} from '../../assets/pep-language.mjs';
 import {json} from '../_lib/coach-auth.js';
 import {schema,identity,eligibleSQL,eligible,conversation,throttle,deliver} from '../_lib/private-messages.js';
@@ -16,7 +17,7 @@ export async function onRequest({request,env,waitUntil}){
    const c=await conversation(db,id,actor);if(!c)return json({error:'Conversation unavailable.'},404);
    const raw=url.searchParams.get('before'),before=raw===null?Number.MAX_SAFE_INTEGER:Number(raw);
    if(!Number.isSafeInteger(before)||before<1)return json({error:'Invalid page.'},400);
-   const rows=(await db.prepare(`SELECT m.sequence,m.id,m.sender_role,m.sender_name,m.body,m.created,n.status AS notification_status,n.email_status,n.push_status FROM private_messages m LEFT JOIN private_message_notices n ON n.message_id=m.id WHERE m.conversation_id=? AND m.sequence<? ORDER BY m.sequence DESC LIMIT 51`).bind(id,before).all()).results;
+   const rows=(await db.prepare(`SELECT m.sequence,m.id,m.sender_role,m.sender_name,m.body,m.category,m.subject,m.created,n.status AS notification_status,n.email_status,n.push_status FROM private_messages m LEFT JOIN private_message_notices n ON n.message_id=m.id WHERE m.conversation_id=? AND m.sequence<? ORDER BY m.sequence DESC LIMIT 51`).bind(id,before).all()).results;
    const messages=rows.slice(0,50).reverse();
    return json({conversation:{id:c.id,team:c.team_name,coach:c.coach_name},messages,older:rows.length>50?messages[0].sequence:null});
   }
@@ -32,6 +33,14 @@ export async function onRequest({request,env,waitUntil}){
  let b;try{b=JSON.parse(raw);}catch{return json({error:'Invalid request.'},400);}
  if(!b||typeof b!=='object')return json({error:'Invalid request.'},400);
  if(!await throttle(db,actor))return json({error:'Please wait a minute before sending more messages.'},429);
+ if(b.action==='start_parent'){
+  if(actor.role!=='coach'||b.audience!=='parents')return json({error:'Student accounts and parent consent are not enabled. Choose Message Parents.'},403);
+  const team=String(b.team_code||''),org=String(b.organization_id||''),parent=String(b.parent_email||'').trim().toLowerCase();
+  if(!await eligible(db,team,actor.id,parent,org))return json({error:'This family is not available for your team.'},403);
+  await db.prepare('INSERT OR IGNORE INTO private_conversations VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),org,team,parent,actor.id,Date.now()).run();
+  const c=await db.prepare('SELECT id FROM private_conversations WHERE organization_id=? AND team_code=? AND parent_email=? AND coach_id=?').bind(org,team,parent,actor.id).first();
+  return json({id:c.id},201);
+ }
  if(b.action==='start'){
   if(actor.role!=='parent')return json({error:'Parents choose the approved coach to start a conversation.'},403);
   const team=String(b.team_code||''),coach=String(b.coach_id||''),org=String(b.organization_id||'');
@@ -46,15 +55,18 @@ export async function onRequest({request,env,waitUntil}){
  const text=typeof b.message==='string'?b.message.trim():'',id=String(b.message_id||'');
  if(!text||text.length>4000||!uuid.test(id))return json({error:'Enter a message of 1–4,000 characters.'},400);
  if(findBlockedWords(text).length)return json({error:LANGUAGE_NOTE},422);
+ const category=String(b.category||'general'),subject=String(b.subject||'').trim();
+ if(!CATEGORIES.includes(category)||subject.length>120||(actor.role==='coach'&&!subject))return json({error:'Choose a topic and label what this message is about.'},400);
+ if(findBlockedWords(subject).length)return json({error:LANGUAGE_NOTE},422);
  const old=await db.prepare('SELECT * FROM private_messages WHERE id=?').bind(id).first();
- if(old&&(old.conversation_id!==c.id||old.sender_role!==actor.role||old.sender_id!==actor.id||old.body!==text))return json({error:'Message retry does not match.'},409);
+ if(old&&(old.conversation_id!==c.id||old.sender_role!==actor.role||old.sender_id!==actor.id||old.body!==text||old.category!==category||old.subject!==subject))return json({error:'Message retry does not match.'},409);
  // Atomic write-time authorization: revocation cannot race the initial read.
  await db.batch([
- db.prepare(`INSERT OR IGNORE INTO private_messages(id,conversation_id,sender_role,sender_id,sender_name,body,created)
- SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM private_conversations c JOIN private_message_teams t ON t.team_code=c.team_code AND t.organization_id=c.organization_id JOIN school_teams s ON s.team_code=t.team_code JOIN private_message_coaches pc ON pc.team_code=c.team_code AND pc.coach_id=c.coach_id JOIN coach_access_requests a ON a.id=c.coach_id WHERE c.id=? AND t.enabled=1 AND pc.active=1 AND a.status='approved' AND s.kind IN ('rec','travel') AND s.school_id IS NULL AND EXISTS(SELECT 1 FROM guardian_memberships g WHERE g.email=c.parent_email AND g.team_code=c.team_code AND g.status='approved' AND g.expires>?))`).bind(id,c.id,actor.role,actor.id,actor.name,text,Date.now(),c.id,Date.now()),
- db.prepare(`INSERT OR IGNORE INTO private_message_notices(message_id,updated) SELECT id,? FROM private_messages WHERE id=? AND conversation_id=? AND sender_role=? AND sender_id=? AND body=?`).bind(Date.now(),id,c.id,actor.role,actor.id,text)
+ db.prepare(`INSERT OR IGNORE INTO private_messages(id,conversation_id,sender_role,sender_id,sender_name,body,created,category,subject)
+ SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM private_conversations c JOIN private_message_teams t ON t.team_code=c.team_code AND t.organization_id=c.organization_id JOIN school_teams s ON s.team_code=t.team_code JOIN private_message_coaches pc ON pc.team_code=c.team_code AND pc.coach_id=c.coach_id JOIN coach_access_requests a ON a.id=c.coach_id WHERE c.id=? AND t.enabled=1 AND pc.active=1 AND a.status='approved' AND s.kind IN ('rec','travel') AND s.school_id IS NULL AND EXISTS(SELECT 1 FROM guardian_memberships g WHERE g.email=c.parent_email AND g.team_code=c.team_code AND g.status='approved' AND g.expires>?))`).bind(id,c.id,actor.role,actor.id,actor.name,text,Date.now(),category,subject,c.id,Date.now()),
+ db.prepare(`INSERT OR IGNORE INTO private_message_notices(message_id,updated) SELECT id,? FROM private_messages WHERE id=? AND conversation_id=? AND sender_role=? AND sender_id=? AND body=? AND category=? AND subject=?`).bind(Date.now(),id,c.id,actor.role,actor.id,text,category,subject)
  ]);
- const stored=await db.prepare('SELECT id FROM private_messages WHERE id=? AND conversation_id=? AND sender_role=? AND sender_id=? AND body=?').bind(id,c.id,actor.role,actor.id,text).first();
+ const stored=await db.prepare('SELECT id FROM private_messages WHERE id=? AND conversation_id=? AND sender_role=? AND sender_id=? AND body=? AND category=? AND subject=?').bind(id,c.id,actor.role,actor.id,text,category,subject).first();
  if(!stored)return json({error:'Message was not saved. Refresh access and try again.'},409);
  const task=deliver(db,env,id);if(waitUntil)waitUntil(task);else await task;
  return json({id,saved:true,notificationStatus:'Check message history for provider acceptance. Acceptance does not confirm delivery.'});

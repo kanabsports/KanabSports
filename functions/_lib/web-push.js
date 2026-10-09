@@ -1,3 +1,4 @@
+import {allowedChannels} from './notification-preferences.js';
 import {accessSchema,hasMembership} from './parent-access.js';
 import {CONNECTIONS} from '../../assets/family-connections.js';
 const bytes=new TextEncoder();
@@ -24,6 +25,7 @@ export async function notifyTeam(db,code,messageId){
  const rows=((await db.prepare('SELECT id,endpoint,codes,parent_email FROM push_devices').all()).results||[]).filter(device=>JSON.parse(device.codes).includes(code));
  const totals={accepted:0,failed:0};
  const send=async device=>{
+  if(device.parent_email&&!(await allowedChannels(db,'parent',device.parent_email,'general')).push)return;
   if(!CONNECTIONS[code]&&!await hasMembership(db,device.parent_email,code))return;
   const claim=await db.prepare("INSERT OR IGNORE INTO push_attempts(message_id,device_id,status,created) VALUES(?,?,'sending',?) RETURNING device_id").bind(messageId,device.id,Date.now()).first();
   if(!claim)return;

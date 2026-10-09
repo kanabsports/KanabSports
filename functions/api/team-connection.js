@@ -1,3 +1,4 @@
+import {scheduleEvents} from '../_lib/team-schedule.js';
 import {teamPolicy} from '../_lib/school-access.js';
 import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
 import {ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
@@ -24,31 +25,7 @@ export async function onRequestGet({request,env}){
     const parent=await parentSession(request,db);
     if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?'Your school must approve your guardian access before you can view private team information.':'Sign in to My Family, then request school-approved guardian access.'},parent?403:401);
 
-    const latest=await db.prepare(`
-      SELECT g.source_document_id
-      FROM coach_schedule_games g
-      JOIN coach_documents d ON d.id=g.source_document_id
-      JOIN coach_access_requests c ON c.id=g.coach_id
-      WHERE c.team_code=? AND d.status='approved'
-      ORDER BY datetime(COALESCE(d.reviewed_at,d.created_at)) DESC
-      LIMIT 1
-    `).bind(code).first();
-
-    let events=[];
-    if(latest?.source_document_id){
-      const rows=(await db.prepare(`
-        SELECT g.id,g.date,g.opponent,g.time,g.site
-        FROM coach_schedule_games g
-        JOIN coach_access_requests c ON c.id=g.coach_id
-        WHERE c.team_code=? AND g.source_document_id=?
-        ORDER BY g.date
-      `).bind(code,latest.source_document_id).all()).results||[];
-      events=rows.map(r=>({
-        id:r.id,date:r.date,endDate:r.date,time:r.time||'TBA',
-        title:'Game vs '+r.opponent,detail:[r.site,r.opponent].filter(Boolean).join(' · '),
-        type:'game',url:'/'
-      }));
-    }
+    const events=await scheduleEvents(db,code);
 
     const messages=(await db.prepare(`
       SELECT id,author,body,created_at

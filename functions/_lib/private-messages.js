@@ -1,3 +1,4 @@
+import {allowedChannels} from './notification-preferences.js';
 import {getCoach,sha256} from './coach-auth.js';
 import {parentSession} from './parent-access.js';
 import {sendEmail} from './score-invitations.js';
@@ -17,6 +18,8 @@ export async function schema(db){
  `CREATE TABLE IF NOT EXISTS private_push_devices(id TEXT PRIMARY KEY,endpoint TEXT NOT NULL UNIQUE,role TEXT NOT NULL,identity TEXT NOT NULL,token_hash TEXT NOT NULL,updated INTEGER NOT NULL)`,
  `CREATE TABLE IF NOT EXISTS private_message_limits(key TEXT PRIMARY KEY,count INTEGER NOT NULL,expires INTEGER NOT NULL)`
  ])await db.prepare(sql).run();
+ const columns=(await db.prepare("PRAGMA table_info(private_messages)").all()).results||[];
+ for(const [name,type] of [["category","TEXT NOT NULL DEFAULT 'general'"],["subject","TEXT NOT NULL DEFAULT ''"]])if(!columns.some(c=>c.name===name)){try{await db.prepare(`ALTER TABLE private_messages ADD COLUMN ${name} ${type}`).run();}catch(error){const current=(await db.prepare('PRAGMA table_info(private_messages)').all()).results||[];if(!current.some(c=>c.name===name))throw error;}}
 }
 export async function identity(request,db,role){
  if(role==='coach'){const c=await getCoach(request,db);return c?{role,id:c.id,name:c.name,email:c.email}:null;}
@@ -59,19 +62,20 @@ export async function deliver(db,env,messageId){
  const claim=await db.prepare("UPDATE private_message_notices SET status='processing',updated=? WHERE message_id=? AND status='pending' RETURNING message_id").bind(Date.now(),messageId).first();
  if(!claim)return;
  try{
- const m=await db.prepare(`SELECT m.sender_role,c.* FROM private_messages m JOIN private_conversations c ON c.id=m.conversation_id WHERE m.id=?`).bind(messageId).first();
+ const m=await db.prepare(`SELECT m.sender_role,m.category,c.* FROM private_messages m JOIN private_conversations c ON c.id=m.conversation_id WHERE m.id=?`).bind(messageId).first();
  const access=m&&await eligible(db,m.team_code,m.coach_id,m.parent_email,m.organization_id);
  if(!access){await db.prepare("UPDATE private_message_notices SET status='suppressed',email_status='suppressed',push_status='suppressed',updated=? WHERE message_id=?").bind(Date.now(),messageId).run();return;}
  const role=m.sender_role==='parent'?'coach':'parent',recipient=role==='coach'?m.coach_id:m.parent_email;
  const link=`${messagingOrigin(env)}/messages/?role=${role}&conversation=${encodeURIComponent(m.id)}`;
- const email=await sendEmail(env,{to:[role==='coach'?access.coach_email:m.parent_email],subject:'New private message in Pep',text:`You have a new private message in Pep. Sign in to read and reply:\n\n${link}\n\nReplies to this email are not monitored.`},'private-message-'+messageId);
- const devices=(await db.prepare('SELECT id,endpoint FROM private_push_devices WHERE role=? AND identity=?').bind(role,recipient).all()).results||[];
+ const channels=await allowedChannels(db,role,recipient,m.category);
+ const email=channels.email?await sendEmail(env,{to:[role==='coach'?access.coach_email:m.parent_email],subject:'New private message in Pep',text:`You have a new private message in Pep. Sign in to read and reply:\n\n${link}\n\nReplies to this email are not monitored.`},'private-message-'+messageId):{accepted:false,delivery:'muted'};
+ const devices=channels.push?(await db.prepare('SELECT id,endpoint FROM private_push_devices WHERE role=? AND identity=?').bind(role,recipient).all()).results||[]:[];
  const statuses=[];
  for(const device of devices){
   if(!await eligible(db,m.team_code,m.coach_id,m.parent_email,m.organization_id)){statuses.push('suppressed');continue;}
   try{statuses.push(await sendPush(db,device,'private_push_devices'));}catch{statuses.push('unconfirmed');}
  }
- const push=devices.length?statuses.every(s=>s==='accepted')?'accepted':statuses.some(s=>s==='accepted')?'partial':'failed':'no_devices';
+ const push=!channels.push?'muted':devices.length?statuses.every(s=>s==='accepted')?'accepted':statuses.some(s=>s==='accepted')?'partial':'failed':'no_devices';
  await db.prepare('UPDATE private_message_notices SET status=?,email_status=?,push_status=?,updated=? WHERE message_id=?').bind('complete',email.accepted?'accepted':email.delivery,push,Date.now(),messageId).run();
  }catch{
  await db.prepare("UPDATE private_message_notices SET status='unconfirmed',updated=? WHERE message_id=?").bind(Date.now(),messageId).run();

@@ -28,7 +28,7 @@
 <section class="pane" id="pane-home"><section id="connectionSummary" class="panel connection-summary" aria-live="polite"></section>
 <div class="welcome"><div><div class="eyebrow">MY FAMILY</div><h2 id="welcomeTitle">Your sports, simplified.</h2><div class="child-chips" id="childChips"></div></div><div class="team-actions"><button class="btn primary small" data-open-add>Enter Codes</button><button class="btn ghost small" id="manageFamily">Manage Family</button></div></div>
 <section class="panel sync-card" id="returningFamily" style="margin-bottom:14px"><div><h3>Already set up My Family?</h3><p class="note">On a new device, sign in with your email and 6-digit PIN. Your saved kids and teams come with you.</p></div><div class="team-actions"><button class="btn primary" id="returningSignIn">Sign In</button><button class="btn ghost small" id="newFamilyAccount">Create Free Account</button></div></section><section class="panel setup" id="setupGuide"><div class="panel-head"><div><div class="eyebrow">FIRST TIME HERE?</div><h3>Setup takes about a minute.</h3></div></div><div class="setup-grid"><div class="setup-step"><span class="step-num">1</span><strong>Connect school or rec</strong><p>Enter a school code, a rec/travel team code, or both. You only need the ones your family uses.</p></div><div class="setup-step"><span class="step-num">2</span><strong>Label it if helpful</strong><p>Nickname, initials, Kid 1 — or leave it blank. No child name is required.</p></div><div class="setup-step"><span class="step-num">3</span><strong>Save My Family</strong><p>Create a free account and choose a 6-digit PIN to bring your family setup to another device.</p></div><div class="setup-step"><span class="step-num">4</span><strong>Turn on notifications</strong><p>Add Kanab Sports to your Home Screen, then enable app notifications for coach messages and important team updates. SMS is optional.</p></div></div></section>
-<section class="panel" id="pushPanel"></section><section class="panel home-updates" id="homeUpdatesPanel" style="margin-top:14px"><div class="panel-head"><div><div class="eyebrow">UPDATES</div><h3>Important updates</h3></div><button class="btn ghost small" data-go="messages">All Updates</button></div><div id="homeUpdates"></div></section>
+<section class="panel"><h3>Shared with you</h3><p><a href="/messages/?role=parent">Notification mute preferences</a></p><div id="sharedFamilies"></div></section><section class="panel" id="pushPanel"></section><section class="panel home-updates" id="homeUpdatesPanel" style="margin-top:14px"><div class="panel-head"><div><div class="eyebrow">UPDATES</div><h3>Important updates</h3></div><button class="btn ghost small" data-go="messages">All Updates</button></div><div id="homeUpdates"></div></section>
 <div class="family-grid" style="margin-top:14px"><section class="panel"><div class="panel-head"><div><div class="eyebrow">FAMILY SCHEDULE</div><h3>Next up</h3></div><button class="btn ghost small" data-go="schedule">All events</button></div><div id="homeSchedule" class="schedule-list"></div></section><aside class="home-details"><section class="panel"><div class="panel-head"><div><div class="eyebrow">YOUR TEAMS</div><h3>Team information</h3></div><button class="btn ghost small" id="addTeamSide">+ Add</button></div><div id="homeTeams" class="team-stack"></div></section><section class="panel"><div class="eyebrow">YOUR COACHES</div><h3>Who’s in charge?</h3><div id="coachList" class="coach-list" style="margin-top:12px"></div></section></aside></div>
 </section>
 
@@ -54,6 +54,7 @@
 <div class="undo" id="undo" hidden><span>Team removed.</span><button id="undoBtn">Undo</button></div>
 
 <script type="module">
+import {mountFamilySharing} from '/assets/family-sharing.js';
 import {createDriverPlans} from '/assets/family-drivers.js';
 
 import {loadSchoolNotices} from "/assets/school-parent-notices.mjs";
@@ -62,7 +63,7 @@ import {CONNECTIONS,categoryLabel,eventSort,timeMinutes} from "/assets/family-co
 (()=>{'use strict';
 const KEY='kanabSportsParentTeamsV1',TRASH='kanabSportsParentTrashV1',PROFILE='kanabSportsParentProfileV1';
 const registry=structuredClone(CONNECTIONS);
-let feedError='',feedLoaded=false,activePane='home',activeCategory=sessionStorage.getItem('ksFamilyCategory')||'',activeChild='';
+let feedInFlight=false,feedError='',feedLoaded=false,activePane='home',activeCategory=sessionStorage.getItem('ksFamilyCategory')||'',activeChild='';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Denver',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -74,6 +75,7 @@ const profile=()=>{try{return JSON.parse(localStorage.getItem(PROFILE)||'{}')}ca
 let addMode='team';
 let account=null,challenge='',syncTimer=null,syncChain=Promise.resolve();
 const driverPlans=createDriverPlans({events:()=>familyEvents(),render:()=>render(),account:()=>account});
+const familySharing=mountFamilySharing($('sharedFamilies'),()=>account);
 function normalized(a){return a.map((x,i)=>({code:String(x.code||'').toUpperCase(),child:String(x.child||''),addedAt:Number(x.addedAt)||Date.now(),entryId:x.entryId||('local-'+(Number(x.addedAt)||Date.now())+'-'+i)})).filter(x=>/^[A-Z0-9_-]{1,32}$/.test(x.code))}
 function saveNormalized(a){localStorage.setItem(KEY,JSON.stringify(normalized(a)))}
 function teamData(s){return registry[s.code]}
@@ -89,7 +91,7 @@ function chips(){
 function scheduleHtml(events,limit=99){
  const visible=events.slice(0,limit),conf=conflictMap(events);
  if(!visible.length)return '<div class="empty"><h3>Nothing scheduled yet.</h3><p>Add a team and its upcoming events will appear here.</p></div>';
- return visible.map(({s,t,e})=>{const x=md(e.date),key=e.date+'|'+e.time,clash=(conf[key]||[]).length>1;return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Schedule overlap · '+conf[key].length+' events</div>':'')+driverPlans.markup(s,e)+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
+ return visible.map(({s,t,e})=>{const x=md(e.date),key=e.date+'|'+e.time,clash=(conf[key]||[]).length>1;return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+(e.cancelled?' · CANCELLED':'')+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Schedule overlap · '+conf[key].length+' events</div>':'')+(e.cancelled?'':driverPlans.markup(s,e))+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
 }
 function displayKidLabel(saved,index=0){return saved.child&&saved.child.trim()?saved.child.trim():'Kid '+(index+1)}
 function teamCard(s,index=0){
@@ -183,7 +185,7 @@ function shareTeam(id){const s=normalized(read()).find(x=>x.entryId===id),t=s&&t
 function removeTeam(id){const a=normalized(read()),i=a.findIndex(s=>s.entryId===id);if(i<0)return;const [removed]=a.splice(i,1);localStorage.setItem(TRASH,JSON.stringify({removed,expires:Date.now()+48*3600000}));write(a);$('undo').hidden=false;setTimeout(()=>$('undo').hidden=true,8000)}
 async function api(body){const r=await fetch('/api/parent-account',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Please try again.');return d}
 async function loadAccount(){
- try{const d=await api();if(!d.signedIn){account=null;$('schoolParentNotices').replaceChildren();renderAccount();await driverPlans.load();return}account=d.account;await loadSchoolNotices($('schoolParentNotices'),loadFeed);
+ try{const d=await api();if(!d.signedIn){account=null;familySharing.load();$('schoolParentNotices').replaceChildren();renderAccount();await driverPlans.load();return}account=d.account;await loadSchoolNotices($('schoolParentNotices'),loadFeed);
  const remote=(d.family||[]).map(x=>({code:x.team_code,child:x.child_name,addedAt:x.created,entryId:x.entry_id}));
  const owner=localStorage.getItem('ksFamilyOwner');
  const guest=owner?[]:normalized(read());const merged=[...remote];
@@ -215,7 +217,7 @@ $('undoBtn').onclick=()=>{try{const x=JSON.parse(localStorage.getItem(TRASH)||'n
 $('connectionTabs').onclick=e=>{const b=e.target.closest('[data-category]');if(!b)return;activeCategory=b.dataset.category;go('home');render();};
 $('connectionTabs').onkeydown=e=>{if(!['ArrowRight','ArrowLeft','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...$('connectionTabs').querySelectorAll('[role=tab]')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tabs[next].click();tabs[next].focus();};
 $('childChips').onclick=e=>{const b=e.target.closest('[data-child]');if(!b)return;$('childChips').querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));render(b.dataset.child)};
-$('accountPill').onclick=()=>account?go('settings'):openAccount();$('syncButton').onclick=async()=>{if(!account){openAccount();return}try{clearTimeout(syncTimer);await syncChain;await api({action:'logout'});account=null;$('schoolParentNotices').replaceChildren();for(const code of Object.keys(registry))if(!CONNECTIONS[code])delete registry[code];localStorage.removeItem(KEY);localStorage.removeItem(PROFILE);localStorage.removeItem('ksFamilyOwner');render();document.dispatchEvent(new Event('familyconnectionschanged'))}catch{}};
+$('accountPill').onclick=()=>account?go('settings'):openAccount();$('syncButton').onclick=async()=>{if(!account){openAccount();return}try{clearTimeout(syncTimer);await syncChain;await api({action:'logout'});account=null;familySharing.load();$('schoolParentNotices').replaceChildren();for(const code of Object.keys(registry))if(!CONNECTIONS[code])delete registry[code];localStorage.removeItem(KEY);localStorage.removeItem(PROFILE);localStorage.removeItem('ksFamilyOwner');render();document.dispatchEvent(new Event('familyconnectionschanged'))}catch{}};
 document.querySelectorAll('[data-close-account]').forEach(b=>b.onclick=closeAccount);$('accountPanel').onclick=e=>{if(e.target===$('accountPanel'))closeAccount()};
 $('accountForm').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;$('accountStatus').textContent='Sending verification code…';try{const name=$('parentName').value.trim(),email=$('parentEmail').value.trim();const d=await api({action:'request_code',name,email});challenge=d.challenge;localStorage.setItem(PROFILE,JSON.stringify({name,email}));accountView('code');$('codeSentText').textContent='We sent an 8-digit code to '+email+'. It expires in 10 minutes.';$('parentCode').focus()}catch(err){$('accountStatus').textContent=err.message}finally{b.disabled=false}};
 $('backAccount').onclick=()=>{accountView('setup');$('codeStatus').textContent='';$('accountStatus').textContent=''};
@@ -230,21 +232,24 @@ async function applyInvite(){
  history.replaceState({},'',location.pathname);
 }
 async function loadFeed(){
+ if(feedInFlight)return;feedInFlight=true;
+ await familySharing.load();
  let failed=false;
  try{const dynamic=normalized(read()).map(x=>x.code).filter(code=>code.startsWith('KS-'));await hydrateCodes(dynamic,true)}catch{failed=true}
  const locked=normalized(read()).some(x=>x.code!=='__KID__'&&!registry[x.code]);
- feedLoaded=true;feedError=locked?'Some private teams need guardian approval. Sign in, then use Add Team with your code to request access.':failed?'Some coach updates could not refresh. Please try again shortly.':'';render();
+ feedLoaded=true;feedError=locked?'Some private teams need guardian approval. Sign in, then use Add Team with your code to request access.':failed?'Some coach updates could not refresh. Please try again shortly.':'';render();feedInFlight=false;
 }
 (async()=>{
  await hydrateCodes(normalized(read()).map(x=>x.code));
  await applyInvite();
  render();
  await loadAccount();
+ await familySharing.load();
  mountPush($('pushPanel'),()=>normalized(read()).filter(x=>x.code!=='__KID__').map(x=>x.code));
  if(q.get('view')==='messages'){activeCategory=q.get('category')==='rec'?'rec':'';render();go('messages');}
  await loadFeed();
 })();
-setInterval(()=>{if(!document.hidden)loadFeed();},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadFeed();});
+setInterval(()=>{if(!document.hidden)loadFeed();},5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadFeed();});
 })();
 </script>
 </body>
