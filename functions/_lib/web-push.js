@@ -18,7 +18,7 @@ export async function sendPush(db,device,table='push_devices'){if(!validEndpoint
  const response=await fetch(device.endpoint,{method:'POST',headers:{Authorization:`vapid t=${input}.${signature}, k=${key.publicKey}`,TTL:'3600',Urgency:'normal'},redirect:'manual',signal:AbortSignal.timeout(10000)});
  // Body cleanup must not turn an accepted delivery into a reported failure.
  try{await response.body?.cancel()}catch{};
- if([404,410].includes(response.status)){const safeTable=['coach_push_devices','owner_push_devices'].includes(table)?table:'push_devices';await db.prepare(`DELETE FROM ${safeTable} WHERE id=?`).bind(device.id).run();return 'expired';}return response.ok?'accepted':'rejected';}
+ if([404,410].includes(response.status)){const safeTable=['coach_push_devices','owner_push_devices','private_push_devices'].includes(table)?table:'push_devices';await db.prepare(`DELETE FROM ${safeTable} WHERE id=?`).bind(device.id).run();return 'expired';}return response.ok?'accepted':'rejected';}
 export async function notifyTeam(db,code,messageId){
  await pushSchema(db);await accessSchema(db);
  const rows=((await db.prepare('SELECT id,endpoint,codes,parent_email FROM push_devices').all()).results||[]).filter(device=>JSON.parse(device.codes).includes(code));
