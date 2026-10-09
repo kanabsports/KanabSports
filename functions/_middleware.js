@@ -1,5 +1,10 @@
+import {removeBullsharksTest} from './_migrations/remove-bullsharks-test.js';
 export async function onRequest(context) {
   const url0=new URL(context.request.url);
+  let cleanupRows=null;
+  if(url0.hostname==='kanabsports.com'&&context.env.SPORTS_DB){
+    try{cleanupRows=(await removeBullsharksTest(context.env.SPORTS_DB,context.env))?.deleted_rows??null}catch(error){console.error('Approved test cleanup failed',error?.message)}
+  }
   if(['/team-d/','/team-d','/britt/','/britt','/britt.html','/jodi/','/jodi','/jodi.html','/amber/','/amber'].includes(url0.pathname))return Response.redirect(new URL('/coaches',url0.origin),301);
   if(['/admin','/admin/','/admin.html','/business','/business.html','/owner-sw.js','/owner.webmanifest','/assets/owner-push.js','/assets/coach-push.js','/assets/family-push.js','/assets/notification-panel.js'].includes(url0.pathname)){
     const response=await context.next();
@@ -8,7 +13,8 @@ export async function onRequest(context) {
     headers.set('X-Owner-Console-Version','2026-10-07-owner-pwa-v1');
     return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
   }
-  const response = await context.next();
+  let response = await context.next();
+  if(cleanupRows!==null){const h=new Headers(response.headers);h.set('X-Pep-Test-Cleanup','completed; rows='+cleanupRows);response=new Response(response.body,{status:response.status,statusText:response.statusText,headers:h})}
   const url = new URL(context.request.url);
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return response;
