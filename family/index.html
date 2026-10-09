@@ -20,7 +20,7 @@
 <body>
 <header class="top"><div class="wrap topbar"><div><a class="brand" href="/">KANAB <span>SPORTS</span></a><div class="pep">powered by <b>pep</b></div></div><div class="top-actions"><a class="top-link" href="/">Public Home</a><button class="account-pill" id="accountPill"><span class="account-dot"></span><span id="accountText">Sign In</span></button></div></div></header>
 <section class="hero"><div class="wrap hero-row"><div><div class="eyebrow">Free Parent Portal</div><h1>My Family</h1><p>School and rec sports. One family, one schedule.</p></div><div class="hero-cta"><button class="btn primary" id="addKidTop">+ Add Kid</button></div></div></section>
-<section class="walkthrough"><div class="wrap"><div class="walkthrough-card"><div class="walkthrough-copy"><div class="eyebrow">NEW TO MY FAMILY?</div><h2>See how it works in about a minute.</h2><p>Before you set anything up, see how team codes, multiple kids, schedules, coach updates, app notifications, and Home Screen setup all work together.</p><span class="walkthrough-meta">66 seconds · Parents are free · No signup required</span></div><video class="walkthrough-video" controls playsinline preload="metadata" poster="/assets/my-family-walkthrough-poster.jpg" aria-label="My Family parent walkthrough"><source src="/assets/my-family-walkthrough.mp4" type="video/mp4">Your browser does not support this video. <a href="/assets/my-family-walkthrough.mp4">Open the walkthrough video</a>.</video></div></div></section>
+
 
 <div class="wrap dashboard">
 <nav class="rail" aria-label="Parent portal"><span class="rail-label">My Family</span><button class="active" data-pane="home">Home</button><button data-pane="schedule">Schedule</button><button data-pane="messages">Updates <span class="nav-badge" id="updatesBadge" hidden>0</span></button><button data-pane="teams">Teams</button></nav>
@@ -54,6 +54,8 @@
 <div class="undo" id="undo" hidden><span>Team removed.</span><button id="undoBtn">Undo</button></div>
 
 <script type="module">
+import {createDriverPlans} from '/assets/family-drivers.js';
+
 import {loadSchoolNotices} from "/assets/school-parent-notices.mjs";
 import {mountPush} from "/assets/family-push.js?v=20261007-panels";
 import {CONNECTIONS,categoryLabel,eventSort,timeMinutes} from "/assets/family-connections.js";
@@ -71,6 +73,7 @@ const write=a=>{localStorage.setItem(KEY,JSON.stringify(a));render();syncFamily(
 const profile=()=>{try{return JSON.parse(localStorage.getItem(PROFILE)||'{}')}catch{return {}}};
 let addMode='team';
 let account=null,challenge='',syncTimer=null,syncChain=Promise.resolve();
+const driverPlans=createDriverPlans({events:()=>familyEvents(),render:()=>render(),account:()=>account});
 function normalized(a){return a.map((x,i)=>({code:String(x.code||'').toUpperCase(),child:String(x.child||''),addedAt:Number(x.addedAt)||Date.now(),entryId:x.entryId||('local-'+(Number(x.addedAt)||Date.now())+'-'+i)})).filter(x=>/^[A-Z0-9_-]{1,32}$/.test(x.code))}
 function saveNormalized(a){localStorage.setItem(KEY,JSON.stringify(normalized(a)))}
 function teamData(s){return registry[s.code]}
@@ -86,7 +89,7 @@ function chips(){
 function scheduleHtml(events,limit=99){
  const visible=events.slice(0,limit),conf=conflictMap(events);
  if(!visible.length)return '<div class="empty"><h3>Nothing scheduled yet.</h3><p>Add a team and its upcoming events will appear here.</p></div>';
- return visible.map(({s,t,e})=>{const x=md(e.date),key=e.date+'|'+e.time,clash=(conf[key]||[]).length>1;return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Schedule overlap · '+conf[key].length+' events</div>':'')+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
+ return visible.map(({s,t,e})=>{const x=md(e.date),key=e.date+'|'+e.time,clash=(conf[key]||[]).length>1;return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Schedule overlap · '+conf[key].length+' events</div>':'')+driverPlans.markup(s,e)+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
 }
 function displayKidLabel(saved,index=0){return saved.child&&saved.child.trim()?saved.child.trim():'Kid '+(index+1)}
 function teamCard(s,index=0){
@@ -180,13 +183,13 @@ function shareTeam(id){const s=normalized(read()).find(x=>x.entryId===id),t=s&&t
 function removeTeam(id){const a=normalized(read()),i=a.findIndex(s=>s.entryId===id);if(i<0)return;const [removed]=a.splice(i,1);localStorage.setItem(TRASH,JSON.stringify({removed,expires:Date.now()+48*3600000}));write(a);$('undo').hidden=false;setTimeout(()=>$('undo').hidden=true,8000)}
 async function api(body){const r=await fetch('/api/parent-account',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Please try again.');return d}
 async function loadAccount(){
- try{const d=await api();if(!d.signedIn){account=null;$('schoolParentNotices').replaceChildren();renderAccount();return}account=d.account;await loadSchoolNotices($('schoolParentNotices'),loadFeed);
+ try{const d=await api();if(!d.signedIn){account=null;$('schoolParentNotices').replaceChildren();renderAccount();await driverPlans.load();return}account=d.account;await loadSchoolNotices($('schoolParentNotices'),loadFeed);
  const remote=(d.family||[]).map(x=>({code:x.team_code,child:x.child_name,addedAt:x.created,entryId:x.entry_id}));
  const owner=localStorage.getItem('ksFamilyOwner');
  const guest=owner?[]:normalized(read());const merged=[...remote];
  guest.forEach(r=>{if(!merged.some(x=>x.entryId===r.entryId||x.code===r.code&&x.child===r.child))merged.push(r)});
  const inviteEntry=normalized(read()).filter(x=>x.entryId===newInviteId);inviteEntry.forEach(r=>{if(!merged.some(x=>x.code===r.code&&x.child===r.child))merged.push(r)});
- saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);await hydrateCodes(merged.map(x=>x.code));render();document.dispatchEvent(new Event('familyconnectionschanged'));if(guest.length||inviteEntry.length)syncFamily();
+ saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);await hydrateCodes(merged.map(x=>x.code));render();document.dispatchEvent(new Event('familyconnectionschanged'));if(guest.length||inviteEntry.length)syncFamily();await driverPlans.load();
  }catch{$('saveStatus').textContent='Could not check your account. Your saved teams on this device are still available.';renderAccount()}
 }
 function syncFamily(){if(!account)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>{

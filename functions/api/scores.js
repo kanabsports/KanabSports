@@ -2,36 +2,14 @@ export async function onRequestGet(context) {
   const { env } = context;
 
   if (!env.SPORTS_DB) {
-    return json({ scores: [], celebration: null });
+    return json({ scores: [], celebration: null, error: 'Published scores are temporarily unavailable.' },503);
   }
 
   try {
     await ensureSchema(env.SPORTS_DB);
 
-    // One-time cleanup for the accidental Dark Sky / Travel Soccer test row.
-    await env.SPORTS_DB.prepare(`
-      DELETE FROM coach_submissions
-      WHERE id='d9beed80-2cd5-45e6-b3f9-50c0fd9f7a31'
-         OR (
-           type='Score'
-           AND lower(trim(team))='dark sky'
-           AND lower(trim(opponent))='travel soccer'
-           AND date(event_date)='2026-08-25'
-         )
-    `).run();
-
-    // One-time cleanup for the temporary State Champs test submission.
-    await env.SPORTS_DB.prepare(`
-      DELETE FROM coach_submissions
-      WHERE type='Score'
-        AND lower(trim(team))='cowgirls'
-        AND lower(trim(opponent))='beaver'
-        AND replace(replace(trim(result), ' ', ''), '—', '-') IN ('7-3','7–3')
-        AND lower(trim(message))='state champs'
-    `).run();
-
     const query = await env.SPORTS_DB.prepare(`
-      SELECT id, sport, team, opponent, result, event_date, message, published_at, created_at
+      SELECT id, sport, team, opponent, result, event_date, message, link, published_at, created_at
       FROM coach_submissions
       WHERE status='approved'
         AND type='Score'
@@ -50,7 +28,7 @@ export async function onRequestGet(context) {
       })
       .filter(row => {
         const published = Date.parse(String(row.published_at || row.created_at || ''));
-        return Number.isFinite(published) && (Date.now() - published) <= 72 * 60 * 60 * 1000;
+        return Number.isFinite(published) && (Date.now() - published) <= 24 * 60 * 60 * 1000;
       })
       .sort((a, b) => Date.parse(String(b.published_at || b.created_at || '')) - Date.parse(String(a.published_at || a.created_at || '')))[0];
 
@@ -58,7 +36,7 @@ export async function onRequestGet(context) {
     return json({ scores, celebration });
   } catch (error) {
     console.error('Scores API error', error);
-    return json({ scores: [], celebration: null });
+    return json({ scores: [], celebration: null, error: 'Published scores are temporarily unavailable.' },503);
   }
 }
 
@@ -74,15 +52,16 @@ function normalizeScore(row) {
     result: row.result || '',
     status: 'FINAL',
     date: row.event_date || String(row.published_at || '').slice(0, 10),
+    publishedAt: row.published_at || row.created_at,
   };
 }
 
 function normalizeCelebration(row) {
   const parsed = parseScores(row.result || '');
   const note = String(row.message || '');
-  const level = /\\[\\[STATE_CHAMPION\\]\\]|\\bstate\\s+champs?\\b/i.test(note)
+  const level = /\[\[STATE_CHAMPION\]\]|\bstate\s+champs?\b/i.test(note)
     ? 'state'
-    : /\\bhomecoming\\b/i.test(note) ? 'homecoming' : 'win';
+    : /\bhomecoming\b/i.test(note) ? 'homecoming' : 'win';
   return {
     id: row.id,
     sport: row.sport || 'Sport',
@@ -91,6 +70,8 @@ function normalizeCelebration(row) {
     teamScore: parsed?.teamScore ?? null,
     opponentScore: parsed?.opponentScore ?? null,
     level,
+    date: row.event_date || String(row.published_at || row.created_at).slice(0,10),
+    source: 'coach',
     sourceUrl: row.link || '',
     publishedAt: row.published_at || row.created_at || '',
   };
@@ -122,9 +103,9 @@ async function ensureSchema(db) {
   `).run();
 }
 
-function json(data) {
+function json(data,status=200) {
   return new Response(JSON.stringify(data), {
-    status: 200,
+    status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store, no-cache, must-revalidate',

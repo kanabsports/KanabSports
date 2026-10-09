@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {onRequestGet} from '../functions/api/scores.js';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const sql=new DatabaseSync(':memory:');const db={prepare(q){const st=sql.prepare(q);let args=[];return{bind(...a){args=a;return this},async run(){return st.run(...args)},async all(){return{results:st.all(...args)}}}}};
+await onRequestGet({env:{SPORTS_DB:db}});
+for(const [id,status,result,note] of [['win','approved','5-3',''],['loss','approved','1-2',''],['pending','pending','9-0',''],['state','approved','4-1','[[STATE_CHAMPION]]']])sql.prepare("INSERT INTO coach_submissions(id,source,type,sport,team,opponent,result,event_date,status,message,published_at) VALUES(?,'Score Assistant','Score','Swim Team','Sample Swim Club','Other Club',?,'2026-10-17',?,?,?)").run(id,result,status,note,new Date(Date.now()+(id==='state'?0:-1000)).toISOString());
+const response=await onRequestGet({env:{SPORTS_DB:db}}),data=await response.json();assert.equal(data.scores.length,3);assert.ok(!data.scores.some(s=>s.id==='pending'));assert.equal(data.celebration.date,'2026-10-17');assert.equal(data.celebration.source,'coach');assert.equal(data.celebration.level,'state');assert.equal(data.celebration.team,'Sample Swim Club');assert.ok(!JSON.stringify(data).includes('[[STATE_CHAMPION]]'));
+const page=readFileSync(new URL('../index.html',import.meta.url),'utf8');
+const loader=page.slice(page.indexOf('async function loadPublishedWin()'),page.indexOf('\nloadPublishedWin();'));
+let applied,rendered,requested=[];
+const ctx=vm.createContext({document:{hidden:false},winRequestPending:false,Promise,Date,fetch:async url=>{requested.push(url);return Response.json(url==='/api/scores'?data:{id:'old',publishedAt:'2020-01-01T00:00:00Z'})},renderSubmittedScores(rows){rendered=rows},applyPublishedWin(win){applied=win}});
+vm.runInContext(loader,ctx);await vm.runInContext('loadPublishedWin()',ctx);assert.equal(applied.id,'state');assert.equal(rendered.length,3);assert.ok(requested.includes('/api/scores'));
+console.log('PASS: approved scores reach homepage loader with dates and correct team; pending excluded; newest win selected; state category parsed; internal audit text not exposed.');sql.close();
