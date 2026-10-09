@@ -38,7 +38,7 @@ export async function onRequest({request,env}){
 async function find(db,token){
   if(!/^[a-f0-9]{48}$/i.test(String(token||'')))return null;
   const hash=await sha256(token);
-  return await db.prepare(`SELECT id,team,sport,opponent,result,event_date,status,review_expires_at,coach_name,assistant_name,approval_mode
+  return await db.prepare(`SELECT id,team,sport,opponent,result,event_date,status,review_expires_at,accountable_coach_name AS coach_name,assistant_name,approval_mode
     FROM coach_submissions WHERE source='Score Assistant' AND review_token_hash=? LIMIT 1`).bind(hash).first();
 }
 async function schema(db){

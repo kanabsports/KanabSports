@@ -1,3 +1,4 @@
+import {invitationSchema,teamScope} from '../_lib/score-invitations.js';
 import {notifyCoach} from '../_lib/web-push.js';
 import {ensureCoachCore,sha256,randomToken,clean,json,normalizePhone} from '../_lib/coach-auth.js';
 
@@ -5,16 +6,22 @@ export async function onRequest({request,env}){
   if(!env.SPORTS_DB)return json({success:false,error:'Score reporting is temporarily unavailable.'},503);
   const db=env.SPORTS_DB;
   try{
-    await ensureCoachCore(db);await schema(db);
+    await ensureCoachCore(db);await schema(db);await invitationSchema(db);
     if(request.method==='GET'){
       const u=new URL(request.url),token=clean(u.searchParams.get('token'),200);
       const ctx=await assistantContext(db,token);
       if(!ctx)return json({success:false,error:'This score assistant link is invalid, expired, or revoked.'},404);
-      const games=await assistantGames(db,ctx);return json({success:true,assistant:{name:ctx.assistant_name,trusted:Boolean(ctx.trusted)},coach:{name:ctx.coach_name,organization:(ctx.team_name||ctx.organization),sport:ctx.sport},games});
+      const games=ctx.assistant_status==='sent'?[]:await assistantGames(db,ctx);return json({success:true,assistant:{name:ctx.assistant_name,trusted:Boolean(ctx.trusted),status:ctx.assistant_status},coach:{name:ctx.coach_name,organization:(ctx.team_name||ctx.organization),sport:ctx.sport},games});
     }
     if(request.method!=='POST')return json({success:false,error:'Method not allowed.'},405);
     const body=await request.json(),token=clean(body.token,200),ctx=await assistantContext(db,token);
     if(!ctx)return json({success:false,error:'This score assistant link is invalid, expired, or revoked.'},403);
+
+    if(body.action==='accept'){
+      await db.prepare(`UPDATE coach_score_assistants SET status='accepted',accepted_at=?,updated_at=?,invite_expires_at=? WHERE id=? AND status='sent' AND invite_token_hash=?`).bind(new Date().toISOString(),new Date().toISOString(),new Date(Date.now()+180*86400000).toISOString(),ctx.assistant_id,await sha256(token)).run();
+      return json({success:true,message:'Invitation accepted. You have score-reporting access only.'});
+    }
+    if(!['accepted','active'].includes(ctx.assistant_status))return json({success:false,error:'Accept your invitation before reporting a score.'},403);
 
     const date=clean(body.date,40),opponent=clean(body.opponent,180),result=clean(body.result,180),link=clean(body.link,700),details=clean(body.details,1200);
     if(!date||!opponent||!result)return json({success:false,error:'Date, opponent, and final score are required.'},400);
@@ -81,7 +88,7 @@ async function assistantGames(db,ctx){
       for(const row of rows){try{const p=JSON.parse(row.payload_json||'{}');for(const g of p.schedule||[]){const date=normalizeDate(g.date,p.season),opponent=String(g.opponent||'').replace(/^vs\\.?\\s*/i,'').replace(/^@\\s*/,'').trim();if(date&&opponent)games.push({id:'doc-'+games.length,date,opponent,time:String(g.time||''),site:String(g.site||''),result:String(g.result||'')})}}catch{}}
     }catch{}
   }
-  const scores=await db.prepare(`SELECT id,event_date AS date,opponent,result FROM coach_submissions WHERE status='approved' AND type='Score' AND lower(team)=lower(?) AND lower(sport)=lower(?) ORDER BY COALESCE(published_at,reviewed_at,created_at) DESC LIMIT 100`).bind(ctx.team_name||ctx.organization,ctx.sport).all().catch(()=>({results:[]}));
+  const scores=await db.prepare(`SELECT id,event_date AS date,opponent,result FROM coach_submissions WHERE status='approved' AND type='Score' AND accountable_coach_id=? ORDER BY COALESCE(published_at,reviewed_at,created_at) DESC LIMIT 100`).bind(ctx.coach_id).all().catch(()=>({results:[]}));
   const existing=scores.results||[];
   const seen=new Set();
   return games.filter(g=>{const k=g.date+'|'+norm(g.opponent);if(seen.has(k))return false;seen.add(k);return true}).map(g=>{const s=existing.find(x=>String(x.date||'').slice(0,10)===String(g.date||'').slice(0,10)&&norm(x.opponent)===norm(g.opponent));return {...g,result:s?.result||g.result||'',status:s?'live':'open'}}).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
@@ -91,10 +98,11 @@ function norm(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 async function assistantContext(db,token){
   if(!/^[a-f0-9]{64}$/i.test(String(token||'')))return null;
   const hash=await sha256(token);
-  return await db.prepare(`SELECT s.id AS assistant_id,s.name AS assistant_name,s.email AS assistant_email,s.trusted,
-    a.id AS coach_id,a.name AS coach_name,a.email AS coach_email,a.phone AS coach_phone,a.organization,a.team_name,a.sport
+  const ctx=await db.prepare(`SELECT s.id AS assistant_id,s.name AS assistant_name,s.email AS assistant_email,s.trusted,s.status AS assistant_status,s.team_scope,
+    a.id AS coach_id,a.name AS coach_name,a.email AS coach_email,a.phone AS coach_phone,a.organization,a.team_name,a.sport,a.team_code
     FROM coach_score_assistants s JOIN coach_access_requests a ON a.id=s.coach_id
-    WHERE s.invite_token_hash=? AND s.status='active' AND datetime(s.invite_expires_at)>datetime('now') AND a.status='approved' LIMIT 1`).bind(hash).first();
+    WHERE s.invite_token_hash=? AND s.status IN ('sent','accepted','active') AND datetime(s.invite_expires_at)>datetime('now') AND a.status='approved' LIMIT 1`).bind(hash).first();
+  return ctx&&ctx.team_scope===teamScope({id:ctx.coach_id,team_code:ctx.team_code})?ctx:null;
 }
 
 async function schema(db){
