@@ -56,6 +56,17 @@ assert.equal((await call(connection,'parentB',null,'&code=REC-A')).status,403,'D
 const driver={action:'save',owner_email:'parenta@example.test',team_code:'REC-A',event_id:'game',driver_name:'Fictional Driver',driver_email:'parentb@example.test'};
 assert.equal((await call(drivers,'parentB',driver)).status,403);
 assert.equal((await call(drivers,'parentA',driver)).status,200);
+// A coach login never grants access to family driver data, even for their team.
+for(const coach of ['coachA','coachB','assistantA']){
+ assert.equal((await call(drivers,coach)).status,401);
+ assert.equal((await call(drivers,coach,driver)).status,401);
+ assert.equal((await call(sharing,coach)).status,401);
+}
+for(const handler of [directory,schedule]){
+ const payload=JSON.stringify((await call(handler,'coachA')).data);
+ for(const field of ['driver_name','driver_email','is_driver','family_driver_plans'])assert.equal(payload.includes('"'+field+'"'),false,'Coach response must omit '+field);
+}
+
 const grant=(await call(sharing,'parentA')).data.grants[0];
 assert.equal((await call(sharing,'parentB',{action:'permissions',id:grant.id,can_edit:true,is_driver:true})).status,403);
 assert.equal((await call(sharing,'parentA',{action:'permissions',id:grant.id,can_edit:true,is_driver:true})).status,200);

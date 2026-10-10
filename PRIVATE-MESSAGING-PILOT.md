@@ -110,3 +110,11 @@ Run `node tests/family-team-tools.test.mjs` for the extended fictional-user suit
 ## Messaging audience direction — October 9 follow-up
 
 Planned team announcements include both students and parents. Parents can mute notification categories without losing in-portal messages or being removed as recipients. No student-only coach messaging is planned. Parent-to-coach private questions remain separate parent/coach threads; student-initiated DMs are not enabled. Student portal access is currently unavailable. School-sports messaging stays disabled until all required school-controlled privacy, access, logging, retention and compliance features are completed and independently verified. This is a product direction and availability notice, not an implementation or certification of student accounts or school compliance.
+
+## Family-only driver boundary
+
+Driver names, contact details, plans and delegation permissions are family-side data only. A coach or assistant-coach session grants no access to family driver/sharing APIs, and coach directory/schedule responses contain no driver fields. A person who is both a coach and a parent must use their separately authorized family access; their coaching role adds no family privileges. Only the head parent and explicitly authorized trusted family delegates can manage driver plans.
+
+Optional coach pickup visibility is a future design item, disabled and unimplemented. If introduced later, it must be explicitly controlled by the parent and limited to the pickup information the parent chooses to share; it must never grant driver-plan editing. No coach-facing pickup toggle or data feed exists in this pilot.
+
+“Stale” refers to a queued reminder containing the schedule details from send/schedule time. The saved plan remains attached to the stable event ID when that event is edited. Already queued reminder emails still require cancellation/replacement by the family. Replacing an uploaded schedule can create new event IDs, so carry-over of old driver assignments must be reviewed rather than assumed.
