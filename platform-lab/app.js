@@ -10,14 +10,14 @@
         {name:"Kanab Sports Admin", role:"Organization admin"}
       ],
       texters: [
-        {name:"Coach Britt", team:"Rec Girls Team D", count:186},
+        {name:"Coach Morgan", team:"Pine Valley Soccer", count:186},
         {name:"Head Coach", team:"Rec Soccer", count:142},
         {name:"Coach Casey", team:"Youth Soccer", count:88},
         {name:"System", team:"Automated reminders", count:318},
         {name:"Admin", team:"Organization", count:61}
       ],
       teams: [
-        {sport:"Soccer",name:"Rec Girls Team D",members:12,status:"Active"},
+        {sport:"Soccer",name:"Pine Valley Soccer",members:12,status:"Active"},
         {sport:"Football",name:"Kanab Cowboys",members:42,status:"Active"},
         {sport:"Basketball",name:"Boys Rec Basketball",members:28,status:"Registration"}
       ],
@@ -149,7 +149,7 @@
       return requestingOrgId===targetOrgId ? (orgById(targetOrgId) || {}).color : null;
     };
 
-    check("Town 2 cannot read Kanab teams","Wizard tenant asks for a Kanab-owned team record.",function(){return readTeam(state.wizard.id,state.kanab.id,"Rec Girls Team D")===null;});
+    check("Town 2 cannot read Kanab teams","Wizard tenant asks for a Kanab-owned team record.",function(){return readTeam(state.wizard.id,state.kanab.id,"Pine Valley Soccer")===null;});
     check("Town 3 cannot read Town 2 teams","Jedi tenant asks for a Hogsmeade-owned team record.",function(){return readTeam(state.jedi.id,state.wizard.id,"Gryffindor Soccer")===null;});
     check("Cross-town SMS write is rejected","Town 2 attempts to spend Town 3 messaging credit.",function(){return writeUsage(state.wizard.id,state.jedi.id,1)===false;});
     check("Kanab lab record stays read-only","Town 3 attempts to change the Kanab lab ledger.",function(){return writeUsage(state.jedi.id,state.kanab.id,1)===false;});
