@@ -25,7 +25,7 @@ export async function onRequest({request,env}){
    const name=clean(body.driver_name,80),email=clean(body.driver_email,254).toLowerCase();
    if(!name||!validEmail(email))return json({success:false,error:'Enter a driver name and valid email address.'},400);
    if(previous&&['scheduled','pending'].includes(previous.status))return json({success:false,error:'Cancel the queued reminder before changing the driver.'},409);
-   const saved=await db.prepare(`INSERT INTO family_driver_plans(id,owner_email,team_code,event_id,driver_name,driver_email,status,updated_at) VALUES(?,?,?,?,?,?,'saved',?) ON CONFLICT(id) DO UPDATE SET driver_name=excluded.driver_name,driver_email=excluded.driver_email,status='saved',last_error=NULL,provider_id=NULL,remind_at=NULL,updated_at=excluded.updated_at WHERE family_driver_plans.status NOT IN ('pending','scheduled')`).bind(id,parent.email,code,eventId,name,email,now).run();
+   const saved=await db.prepare(`INSERT INTO family_driver_plans(id,owner_email,team_code,event_id,driver_name,driver_email,status,updated_at) VALUES(?,?,?,?,?,?,'saved',?) ON CONFLICT(id) DO UPDATE SET driver_name=excluded.driver_name,driver_email=excluded.driver_email,status='saved',last_error=NULL,provider_id=NULL,remind_at=NULL,event_token_hash=NULL,event_token_expires=NULL,updated_at=excluded.updated_at WHERE family_driver_plans.status NOT IN ('pending','scheduled')`).bind(id,parent.email,code,eventId,name,email,now).run();
    if(!(saved.meta?.changes??saved.changes))return json({success:false,error:'A reminder is being scheduled. Cancel it before changing drivers.'},409);
    return json({success:true,message:'Driver saved. Choose Send Reminder or Schedule Reminder to notify them.'});
   }
