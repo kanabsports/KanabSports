@@ -132,7 +132,11 @@ async function reviewPendingScore(id,action){
 }
 function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
 form.addEventListener('submit',async e=>{e.preventDefault();if(!signedCoach){status.textContent='Sign in as a verified coach first.';return}status.textContent='Submitting…';success.classList.remove('show');submitButton.disabled=true;try{const response=await fetch('/api/coach-submit',{method:'POST',body:new FormData(form)});const result=await response.json();if(!response.ok||!result.success)throw new Error(result.error||'Unable to submit.');status.textContent='';successTitle.textContent=typeSelect.value==='Score'?'Score published.':'Submitted.';successCopy.textContent=result.message||'Your submission was received.';success.classList.add('show');coachReturn(result.message||'Your submission was received.');const keepType=typeSelect.value,keep=Object.fromEntries(['name','email','team','sport'].map(id=>[id,document.getElementById(id).value]));form.reset();setType(keepType);if(signedCoach){Object.entries(keep).forEach(([id,v])=>document.getElementById(id).value=v);codeField.style.display='none';}}catch(err){status.textContent=err.message||'Something went wrong. Please try again.';}finally{submitButton.disabled=false;}});setType('Score');loadCoachSession();
-document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));document.querySelectorAll('.portal-panel').forEach(p=>p.hidden=p.id!=='view-'+button.dataset.view)});
+function openCoachView(view){document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===view)));document.querySelectorAll('.portal-panel').forEach(p=>p.hidden=p.id!=='view-'+view)}
+document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>openCoachView(button.dataset.view));
+function openLinkedCoachView(){const view={'#quick-scores':'scores','#submit':'submissions','#coach-messages':'messages','#practiceWorkflow':'practices','#coach-app':'settings'}[location.hash];if(view)openCoachView(view)}
+openLinkedCoachView();window.addEventListener('hashchange',openLinkedCoachView);
+
 </script>
 <script type="module" src="/assets/coach-push.js?v=20261007-panels"></script><script type="module" src="/assets/pep-language-editor.mjs"></script>
 <script type="module" src="/assets/coach-events.js"></script></body>
