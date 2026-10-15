@@ -29,8 +29,17 @@ const original=globalThis.fetch;let sent=[];globalThis.fetch=async(url,options)=
 try{
  assert.equal((await call(metrics,'/api/pilot-tracking')).status,401);
  let r=await call(metrics,'/api/pilot-tracking',null,ac);assert.equal(r.status,200);assert.equal((await r.json()).activeFamilies,null);
+ // Draft is deliberately saveable before team/date setup; activation remains validated.
+ assert.equal((await call(metrics,'/api/pilot-tracking',{action:'configure',team_codes:'',start_date:'',end_date:'',status:'draft'},ac)).status,200);
+ let saved=(await (await call(metrics,'/api/pilot-tracking',null,ac)).json()).pilot;
+ assert.equal(saved.status,'draft');assert.equal(saved.start_date,null);
+ assert.equal((await call(metrics,'/api/pilot-tracking',{action:'configure',team_codes:'',start_date:'',end_date:'',status:'active'},ac)).status,400);
  const today=new Date().toLocaleDateString('en-CA',{timeZone:'America/Denver'}),month=today.slice(0,7);
  assert.equal((await call(metrics,'/api/pilot-tracking',{action:'configure',team_codes:'KS-TEST',start_date:today,end_date:'2030-12-31',status:'active'},ac)).status,200);
+ saved=(await (await call(metrics,'/api/pilot-tracking',null,ac)).json()).pilot;
+ assert.equal(saved.status,'active');assert.deepEqual(saved.team_codes,['KS-TEST']);assert.equal(saved.start_date,today);
+ assert.equal((await call(metrics,'/api/pilot-tracking',{action:'configure',team_codes:'ks-test',start_date:today,end_date:'2030-12-31',status:'draft'},ac)).status,200);
+ saved=(await (await call(metrics,'/api/pilot-tracking',null,ac)).json()).pilot;assert.equal(saved.status,'draft');assert.deepEqual(saved.team_codes,['KS-TEST']);
  let change={event_id:'practice-test-one',change_id:'change-test-one',version:0,title:'Soccer practice',date:'2030-01-12',time:'4:00 PM',endTime:'5:00 PM',detail:'North field',cancelled:false};
  assert.equal((await call(events,'/api/coach-events',change)).status,401);
  r=await call(events,'/api/coach-events',change,cc);assert.equal(r.status,200,await r.clone().text());

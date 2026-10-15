@@ -10,7 +10,7 @@
   async function session(){try{const r=await fetch('/api/coach-access',{cache:'no-store'});return r.json()}catch{return{valid:false}}}
   function fill(form,coach){const vals={name:coach.name,email:coach.email,phone:coach.phone,sport:coach.sport,team:coach.team};Object.entries(vals).forEach(([k,v])=>{const el=field(k,form);if(el&&v!=null){el.value=v;el.readOnly=true;}})}
   function setupForm(form){
-    if(form.dataset.ksCoachAutofill)return;form.dataset.ksCoachAutofill='1';
+    if(form.closest('#verifiedWorkspace')||form.dataset.ksCoachAutofill)return;form.dataset.ksCoachAutofill='1';
     let code=field('coach_code',form);
     if(!code){const wrap=makeField('Coach access code','coach_code');const first=form.querySelector('.field');first?form.insertBefore(wrap,first):form.prepend(wrap);code=wrap.querySelector('input')}
     let phone=field('phone',form);

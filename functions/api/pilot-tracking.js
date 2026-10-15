@@ -20,10 +20,13 @@ export async function onRequest({request,env}){
  if(request.headers.get('Origin')!==new URL(request.url).origin)return json({error:'Open the owner console to update pilot tracking.'},403);
  const raw=await request.text();if(raw.length>6000)return json({error:'Request too large.'},413);let b;try{b=JSON.parse(raw)}catch{return json({error:'Invalid request.'},400)}
  if(b.action==='configure'){
- const codes=[...new Set(String(b.team_codes||'').split(/[\s,]+/).filter(Boolean))];if(codes.length>20||codes.some(c=>!/^KS-[A-Z0-9_-]{1,29}$/.test(c)))return json({error:'Enter up to 20 active coach team codes.'},400);
+ const codes=[...new Set(String(b.team_codes||'').toUpperCase().split(/[\s,]+/).filter(Boolean))];if(codes.length>20||codes.some(c=>!/^KS-[A-Z0-9_-]{1,29}$/.test(c)))return json({error:'Enter up to 20 active coach team codes.'},400);
  for(const code of codes){const policy=await teamPolicy(db,code);if(!policy||!['rec','travel'].includes(policy.kind))return json({error:'This city pilot accepts approved rec/travel teams only. School metrics remain outside this tracker.'},400);if(!await db.prepare("SELECT id FROM coach_access_requests WHERE team_code=? AND status='approved'").bind(code).first())return json({error:'That team has no approved coach.'},400)}
- const status=b.status;if(!['draft','active','review','closed'].includes(status)||!validDate(b.start_date)||!validDate(b.end_date)||b.end_date<b.start_date||(!codes.length&&status!=='draft'))return json({error:'Choose a valid date range and at least one team before activating the pilot.'},400);
- await db.prepare('UPDATE pep_pilots SET team_codes=?,start_date=?,end_date=?,status=? WHERE id=?').bind(JSON.stringify(codes),b.start_date,b.end_date,status,pilot.id).run();return json({success:true});
+ const status=b.status,start=b.start_date||null,end=b.end_date||null;
+ if(!['draft','active','review','closed'].includes(status))return json({error:'Choose a valid pilot stage.'},400);
+ if((start&&!validDate(start))||(end&&!validDate(end))||(start&&end&&end<start))return json({error:'Choose valid dates, with the review date on or after the start date.'},400);
+ if(status!=='draft'&&(!codes.length||!start||!end))return json({error:'Before activating or reviewing the pilot, add an approved rec/travel team code and both dates. You can save incomplete setup as Draft.'},400);
+ await db.prepare('UPDATE pep_pilots SET team_codes=?,start_date=?,end_date=?,status=? WHERE id=?').bind(JSON.stringify(codes),start,end,status,pilot.id).run();return json({success:true});
  }
  const id=clean(b.id,80);if(!/^[a-zA-Z0-9_-]{12,80}$/.test(id))return json({error:'A valid entry reference is required.'},400);
  if(b.action==='log'){
