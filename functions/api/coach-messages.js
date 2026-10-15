@@ -1,4 +1,5 @@
-import {messagingGate} from '../_lib/school-access.js';
+import {pilotSchema} from '../_lib/pilot-schema.js';
+import {messagingGate,teamPolicy} from '../_lib/school-access.js';
 import {accessSchema} from '../_lib/parent-access.js';
 import {findBlockedWords,LANGUAGE_NOTE} from '../../assets/pep-language.mjs';
 import {getCoach,ensureCoachCore,sameOrigin,clean,json} from '../_lib/coach-auth.js';
@@ -22,7 +23,9 @@ export async function onRequest({request,env}){
         ORDER BY datetime(created_at) DESC
         LIMIT 50
       `).bind(teamCode).all()).results||[];
-      return json({success:true,gate:await messagingGate(db,teamCode),teamCode,team,sport:coach.sport,messages:rows,inviteUrl:`${new URL(request.url).origin}/family/?code=${encodeURIComponent(teamCode)}`});
+      const policy=await teamPolicy(db,teamCode);let eligibleGuardians=null;
+      if(['rec','travel'].includes(policy?.kind)){await pilotSchema(db);eligibleGuardians=Number((await db.prepare("SELECT COUNT(DISTINCT email) n FROM guardian_memberships WHERE team_code=? AND status='approved' AND expires>?").bind(teamCode,Date.now()).first()).n);for(const row of rows){row.acknowledged=Number((await db.prepare("SELECT COUNT(DISTINCT r.email) n FROM pep_message_receipts r WHERE r.message_id=? AND r.team_code=? AND EXISTS(SELECT 1 FROM guardian_memberships m WHERE m.email=r.email AND m.team_code=r.team_code AND m.status='approved' AND m.expires>?)").bind(row.id,teamCode,Date.now()).first()).n)}}
+      return json({success:true,gate:await messagingGate(db,teamCode),teamCode,team,sport:coach.sport,eligibleGuardians,messages:rows,inviteUrl:`${new URL(request.url).origin}/family/?code=${encodeURIComponent(teamCode)}`});
     }
 
     if(request.method!=='POST')return json({success:false,error:'Method not allowed.'},405);
