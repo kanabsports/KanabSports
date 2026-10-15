@@ -2,7 +2,9 @@ import {teamPolicy} from '../_lib/school-access.js';
 import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
 import {ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
 
-export async function onRequestGet({request,env}){
+export async function onRequestGet(context){return loadTeam(context)}
+// Internal principal is supplied only after calendar/driver token verification.
+export async function loadTeam({request,env},principal=null){
   if(!env.SPORTS_DB)return json({success:false,error:'Team connection is temporarily unavailable.'},503);
   const db=env.SPORTS_DB;
   try{
@@ -21,8 +23,8 @@ export async function onRequestGet({request,env}){
     const primary=coaches[0],team=primary.team_name||primary.organization||primary.sport;
     const policy=await teamPolicy(db,code);const category=policy?.kind==='school'?'school':'rec';
 
-    const parent=await parentSession(request,db);
-    if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?'Your school must approve your guardian access before you can view private team information.':'Sign in to My Family, then request school-approved guardian access.'},parent?403:401);
+    const parent=principal||await parentSession(request,db);
+    if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?`Your ${category==='school'?'school':'team administrator'} must approve your guardian access before you can view private team information.`:`Sign in to My Family, then request ${category==='school'?'school':'team'} approval for guardian access.`},parent?403:401);
 
     const latest=await db.prepare(`
       SELECT g.source_document_id

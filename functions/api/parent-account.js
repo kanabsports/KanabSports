@@ -1,3 +1,4 @@
+import {connectApproved} from '../_lib/family-onboarding.js';
 const COOKIE='__Host-ks_parent';
 const ORIGIN='https://kanabsports.com';
 const encode=new TextEncoder();
@@ -85,6 +86,9 @@ export async function onRequest({request,env}){
    return signedResponse(token);
   }
   const ses=await session(request,db);if(!ses)return json({error:'Please sign in again.'},401);
+  if(body.action==='connect_approved'){
+   const added=await connectApproved(db,ses.email);return json({success:true,added,message:added?`${added} approved team${added===1?'':'s'} connected. Add optional child labels in My Family.`:'No new approved teams yet. Use the same parent email as registration. The city must provide an approved roster before teams can connect.'});
+  }
   if(body.action==='save_family'){
    const entries=Array.isArray(body.entries)?body.entries:[];
    if(entries.length>20)return json({error:'Too many team entries.'},400);

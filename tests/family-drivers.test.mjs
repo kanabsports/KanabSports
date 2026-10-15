@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {onRequest} from '../functions/api/family-drivers.js';
+import {onRequestGet as driverEvent} from '../functions/api/driver-event.js';
 import {sha256} from '../functions/_lib/coach-auth.js';
 import {accessSchema} from '../functions/_lib/parent-access.js';
 import {CONNECTIONS} from '../assets/family-connections.js';
@@ -20,8 +21,14 @@ try{
  let r=await call({action:'remind'});assert.equal(r.status,200,await r.clone().text());assert.equal(sent[0].payload.to[0],'driver@example.test');assert.equal(sent[0].payload.reply_to,'parent@example.test');assert.equal((await call({action:'remind'})).status,409);
  await call({action:'save',driver_name:'Driver',driver_email:'driver@example.test'});
  const at=new Date(Date.now()+3600000).toISOString();assert.equal((await call({action:'remind',remind_at:at})).status,200);assert.equal(sent.at(-1).payload.scheduled_at,at);
+ const liveUrl=sent.at(-1).payload.text.match(/https:\/\/[^\s]+/)[0];
+ assert(!sent.at(-1).payload.text.includes(event.date),'Email must not freeze event date');
+ let view=await driverEvent({request:new Request(liveUrl),env});assert.equal(view.status,200);assert((await view.text()).includes(event.title));
+ const old=event.detail;event.detail='Changed field';view=await driverEvent({request:new Request(liveUrl),env});assert((await view.text()).includes('Changed field'));event.detail=old;
+ const events=CONNECTIONS['KANAB-HS'].events;CONNECTIONS['KANAB-HS'].events=[];view=await driverEvent({request:new Request(liveUrl),env});assert((await view.text()).includes('The schedule has changed'));CONNECTIONS['KANAB-HS'].events=events;
+
  assert.equal((await call({action:'save',driver_name:'New Driver',driver_email:'new@example.test'})).status,409);
- assert.equal((await call({action:'cancel'})).status,200);assert.ok(sent.at(-1).url.endsWith('/cancel'));
+ assert.equal((await call({action:'cancel'})).status,200);assert.ok(sent.at(-1).url.endsWith('/cancel'));assert.equal((await driverEvent({request:new Request(liveUrl),env})).status,404);
  globalThis.fetch=async()=>Response.json({name:'validation_error'},{status:403});assert.equal((await call({action:'remind'})).status,502);assert.equal((await (await call()).json()).plans[0].status,'failed');
  assert.equal((await call({action:'remind',remind_at:new Date(Date.now()+31*86400000).toISOString()})).status,400);
  console.log('PASS: owner-scoped saved drivers, sign-in/origin/team guards, email validation, no send on save, recipient selection, provider receipts, duplicate send gate, scheduling, cancellation, failure status and time limits. All emails mocked.');

@@ -1,0 +1,13 @@
+import {sha256} from '../_lib/coach-auth.js';
+import {loadTeam} from './team-connection.js';
+import {CONNECTIONS} from '../../assets/family-connections.js';
+const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function page(title,body,status=200){return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${esc(title)} · Kanab Sports</title><style>body{font:18px/1.6 system-ui;margin:40px auto;padding:0 22px;max-width:650px;color:#19251e}h1{line-height:1.15}small{color:#526256}</style><p>Kanab Sports · Driver reminder</p><h1>${esc(title)}</h1>${body}<p><small>Confirm pickup arrangements with the parent. Refresh this page before travelling; a reminder is not confirmation that an event is still taking place.</small></p></html>`,{status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"}})}
+export async function onRequestGet({request,env}){
+ const token=new URL(request.url).searchParams.get('token');if(!env.SPORTS_DB||!/^[a-f0-9]{64}$/.test(token||''))return page('Link unavailable','<p>Ask the parent for current travel details.</p>',404);
+ try{const plan=await env.SPORTS_DB.prepare('SELECT owner_email,team_code,event_id,status FROM family_driver_plans WHERE event_token_hash=? AND event_token_expires>?').bind(await sha256(token),Date.now()).first();if(!plan||plan.status==='cancelled')return page('Link expired or cancelled','<p>Ask the parent for current travel details.</p>',404);
+ let team=CONNECTIONS[plan.team_code];if(!team){const response=await loadTeam({env,request:new Request(new URL('/api/team-connection?code='+encodeURIComponent(plan.team_code),request.url))},{email:plan.owner_email});if(!response.ok)return page('Team access unavailable','<p>Ask the parent for current travel details.</p>',403);team=(await response.json()).team;}
+ const event=team.events.find(e=>e.id===plan.event_id);if(!event)return page('The schedule has changed','<p>This event is no longer in the current schedule. Do not rely on old travel details. Check with the parent for a replacement event.</p>');
+ return page(team.name,`<h2>${esc(event.title)}</h2><p><strong>${esc(event.date)} · ${esc(event.time)}</strong></p><p>${esc(event.detail)}</p><p><small>Read from the current team schedule when this page was opened.</small></p>`);
+ }catch{return page('Details temporarily unavailable','<p>Check with the parent before travelling.</p>',503)}
+}

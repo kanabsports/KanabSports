@@ -9,6 +9,7 @@ export async function onRequest({request,env}){
   await accessSchema(db);
   const parent=await parentSession(request,db);if(!parent)return json({success:false,error:'Sign in to My Family to save drivers and send reminders.'},401);
   await db.prepare(`CREATE TABLE IF NOT EXISTS family_driver_plans(id TEXT PRIMARY KEY,owner_email TEXT NOT NULL,team_code TEXT NOT NULL,event_id TEXT NOT NULL,driver_name TEXT NOT NULL,driver_email TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'saved',provider_id TEXT,remind_at TEXT,last_error TEXT,attempt INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)`).run();
+  for(const column of ['event_token_hash TEXT','event_token_expires INTEGER']){try{await db.prepare('ALTER TABLE family_driver_plans ADD COLUMN '+column).run()}catch(error){if(!String(error.message).includes('duplicate column'))throw error}}
   if(request.method==='GET')return json({success:true,plans:(await db.prepare('SELECT id,team_code,event_id,driver_name,driver_email,status,remind_at,last_error FROM family_driver_plans WHERE owner_email=? ORDER BY updated_at DESC LIMIT 100').bind(parent.email).all()).results||[]});
   if(request.method!=='POST')return json({success:false,error:'Method not allowed.'},405);
   if(request.headers.get('Origin')!==new URL(request.url).origin)return json({success:false,error:'Open My Family to manage drivers.'},403);
@@ -17,7 +18,7 @@ export async function onRequest({request,env}){
   if(!await db.prepare('SELECT entry_id FROM parent_family WHERE email=? AND team_code=? LIMIT 1').bind(parent.email,code).first())return json({success:false,error:'Save this team to your family account first.'},403);
   let team=CONNECTIONS[code];
   if(!team){const url=new URL('/api/team-connection',request.url);url.searchParams.set('code',code);const response=await teamConnection({env,request:new Request(url,{headers:request.headers})});const result=await response.json();if(!response.ok)return json({success:false,error:result.error},response.status);team=result.team;}
-  const event=team.events.find(e=>e.id===eventId);if(!event)return json({success:false,error:'This event is no longer on the team schedule.'},404);
+  const event=team.events.find(e=>e.id===eventId);if(!event&&!['cancel','check_delivery'].includes(action))return json({success:false,error:'This event is no longer on the team schedule.'},404);
   const id=await sha256(parent.email+'|'+code+'|'+eventId);
   const previous=await db.prepare('SELECT * FROM family_driver_plans WHERE id=? AND owner_email=?').bind(id,parent.email).first();
   if(action==='save'){
@@ -50,7 +51,10 @@ export async function onRequest({request,env}){
   if(['pending','scheduled'].includes(previous.status))return json({success:false,error:'A reminder is already pending or scheduled. Cancel it before scheduling another.'},409);
   const lock=await db.prepare("UPDATE family_driver_plans SET status='pending',attempt=attempt+1,updated_at=? WHERE id=? AND status NOT IN ('pending','scheduled') AND (status<>'accepted' OR datetime(updated_at)<datetime('now','-5 minutes'))").bind(now,id).run();
   if(!(lock.meta?.changes??lock.changes))return json({success:false,error:'A reminder was just sent or is being sent. Wait five minutes before retrying.'},409);
-  const text=`Hi ${previous.driver_name},\n\nYou are the selected driver for ${team.name}.\n${event.title}\n${event.date} · ${event.time}\n${event.detail||''}\n\nPlease confirm pickup details with the parent who arranged this ride. Event details can change; check with the family before travelling.\n\nSent at the request of ${parent.email}.`;
+  const eventToken=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
+  await db.prepare('UPDATE family_driver_plans SET event_token_hash=?,event_token_expires=? WHERE id=?').bind(await sha256(eventToken),Date.now()+45*86400000,id).run();
+  const eventUrl=new URL('/api/driver-event?token='+eventToken,request.url).href;
+  const text=`Hi ${previous.driver_name},\n\nThe parent who selected you as a driver has asked you to check the current travel details for ${team.name}.\n\nOpen current event details: ${eventUrl}\n\nThis private link shows only this event, not the family roster or messages. It expires after 45 days or when this reminder is cancelled or replaced. If the event is removed or team access changes, the link will tell you to check with the parent.\n\nPlease confirm pickup and whether the ride is still needed with ${parent.email}. The reminder time does not automatically move when the schedule changes.\n\nSent at the request of ${parent.email}.`;
   const sent=await sendEmail(env,{to:[previous.driver_email],reply_to:parent.email,subject:`Driver reminder · ${team.name}`,text,...(remindAt?{scheduled_at:remindAt.toISOString()}:{})},`driver-${id}-${previous.attempt+1}`);
   await db.prepare('UPDATE family_driver_plans SET status=?,provider_id=?,remind_at=?,last_error=?,updated_at=? WHERE id=?').bind(sent.accepted?(remindAt?'scheduled':'accepted'):'failed',sent.id||null,remindAt?.toISOString()||null,sent.error||null,now,id).run();
   return json({success:sent.accepted,message:sent.accepted?(remindAt?'The provider accepted your scheduled reminder.':'The provider accepted the driver reminder. Inbox delivery is not confirmed.'):undefined,error:sent.error},sent.accepted?200:502);
