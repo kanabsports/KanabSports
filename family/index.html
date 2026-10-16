@@ -91,7 +91,7 @@ function chips(){
 function scheduleHtml(events,limit=99){
  const visible=events.slice(0,limit),conf=conflictMap(events);
  if(!visible.length)return '<div class="empty"><h3>Nothing scheduled yet.</h3><p>Add a team and its upcoming events will appear here.</p></div>';
- return visible.map(({s,t,e})=>{const x=md(e.date),key=e.date+'|'+e.time,clash=(conf[key]||[]).length>1;return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+(e.cancelled?' · CANCELLED':'')+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Schedule overlap · '+conf[key].length+' events</div>':'')+(e.cancelled?'':driverPlans.markup(s,e))+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
+ return visible.map(({s,t,e})=>{const x=md(e.date),key=e.date+'|'+e.time,clash=(conf[key]||[]).length>1;return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+(e.cancelled?' · CANCELLED':'')+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Schedule overlap · '+conf[key].length+' events</div>':'')+driverPlans.markup(s,e)+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
 }
 function displayKidLabel(saved,index=0){return saved.child&&saved.child.trim()?saved.child.trim():'Kid '+(index+1)}
 function teamCard(s,index=0){
@@ -234,6 +234,7 @@ async function applyInvite(){
 async function loadFeed(){
  if(feedInFlight)return;feedInFlight=true;
  await familySharing.load();
+ await driverPlans.load();
  let failed=false;
  try{const dynamic=normalized(read()).map(x=>x.code).filter(code=>code.startsWith('KS-'));await hydrateCodes(dynamic,true)}catch{failed=true}
  const locked=normalized(read()).some(x=>x.code!=='__KID__'&&!registry[x.code]);

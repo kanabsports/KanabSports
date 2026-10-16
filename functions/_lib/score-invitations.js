@@ -27,6 +27,6 @@ export async function sendEmail(env,payload,key){
     if(response.ok && typeof data.id==='string' && data.id)return {accepted:true,id:data.id,delivery:'queued'};
     const code=clean(data.name||data.error?.name,80);
     const errors={validation_error:'The email provider rejected the sender or recipient. Verify the sender domain and email addresses.',restricted_api_key:'The email API key cannot send from this domain.',invalid_api_key:'The email provider rejected its API key.',missing_api_key:'The email provider requires a valid API key.',rate_limit_exceeded:'The email provider is rate limiting requests. Try again shortly.',daily_quota_exceeded:'The email provider daily sending limit has been reached.'};
-    return {accepted:false,error:errors[code]||`The email provider did not accept the request (HTTP ${response.status}${code?' · '+code:''}). Ask the administrator to check Resend logs and sender verification.`,delivery:'rejected'};
+    return {accepted:false,error:errors[code]||`The email provider did not accept the request (HTTP ${response.status}${code?' · '+code:''}). Ask the administrator to check Resend logs and sender verification.`,delivery:'rejected',http_status:response.status};
   }catch{return {accepted:false,error:'The email provider could not be reached or timed out. Acceptance is unconfirmed; use Resend Invitation to retry.',delivery:'unconfirmed'};}
 }

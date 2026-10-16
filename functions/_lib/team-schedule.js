@@ -1,4 +1,5 @@
-export async function scheduleSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS team_schedule_changes(team_code TEXT NOT NULL,event_id TEXT NOT NULL,date TEXT NOT NULL,time TEXT NOT NULL,title TEXT NOT NULL,detail TEXT NOT NULL,cancelled INTEGER NOT NULL,revision INTEGER NOT NULL,actor_id TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(team_code,event_id))`).run();}
+import {driverScheduleTriggers} from './driver-reminders.js';
+export async function scheduleSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS team_schedule_changes(team_code TEXT NOT NULL,event_id TEXT NOT NULL,date TEXT NOT NULL,time TEXT NOT NULL,title TEXT NOT NULL,detail TEXT NOT NULL,cancelled INTEGER NOT NULL,revision INTEGER NOT NULL,actor_id TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(team_code,event_id))`).run();await driverScheduleTriggers(db);}
 export async function scheduleEvents(db,code){
  await scheduleSchema(db);
  let latest;try{latest=await db.prepare(`SELECT g.source_document_id FROM coach_schedule_games g JOIN coach_documents d ON d.id=g.source_document_id JOIN coach_access_requests c ON c.id=g.coach_id WHERE c.team_code=? AND c.status='approved' AND d.status='approved' ORDER BY datetime(COALESCE(d.reviewed_at,d.created_at)) DESC LIMIT 1`).bind(code).first();}catch(error){if(!/no such table/i.test(String(error?.message)))throw error;return [];}

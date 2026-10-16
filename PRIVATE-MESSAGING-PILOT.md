@@ -80,7 +80,7 @@ node tests/private-messages.test.mjs
 
 Covers recreation and travel parent/coach replies, selected assistant conversations, approved coach selector, family/team/organization isolation, admin/score-assistant exclusion, school/unknown/misclassified school denial, session expiry, guardian/coach/team revocation, organization remapping, write-time revocation race, same-origin requests, length/profanity validation, server sender attribution, idempotent retries, pagination, rate limits, identity-bound push subscription/test/expiry cleanup, recipient-specific emails, exact conversation links, provider rejection/timeout/missing configuration, and suppression after revocation. All external delivery is mocked; no real messages were sent.
 
-All 17 current test scripts pass, including the updated public-calendar test. The obsolete retired-team fixture, routes, API stub, demo references and fallback settings query were removed from the current source. Git history and production database contents were not rewritten or purged. Changed JavaScript passes syntax checks and `git diff --check` is clean. Browser layout/interaction, deployed D1/R2 behavior and actual provider delivery still require preview checks above.
+All 18 current test scripts pass, including the 29-case driver lifecycle suite and the updated public-calendar test. The obsolete retired-team fixture, routes, API stub, demo references and fallback settings query were removed from the current source. Git history and production database contents were not rewritten or purged. Changed JavaScript passes syntax checks and `git diff --check` is clean. Browser layout/interaction, deployed D1/R2 behavior and actual provider delivery still require preview checks above.
 
 ## Follow-up: family access, preferences and team tools
 
@@ -94,7 +94,7 @@ Implemented in the same draft PR, still not deployed or activated:
 - Head parents explicitly set **Can edit driver plans** and **Driver** independently, defaulting both off. Delegates cannot promote themselves, invite others for that family, or read private coach conversations. A driver-only grant is read-only. Grant revocation blocks subsequent access, and driver writes atomically recheck edit permission. Updating/revoking a grant also cancels outstanding invitations for that recipient so an old link cannot restore previous permissions.
 - Sharing covers the owner's approved recreation/travel schedules and already-public school calendars. Private school records are never delegated. Owner membership loss, team reclassification, removal from the saved family, or grant revocation makes shared private schedules unavailable. Sharing does not create guardian memberships.
 - Approved head coaches can edit dates/times/titles/locations/cancellation for events in an approved schedule, with revision conflicts checked. Schedule reads are shared between coach and family views. Saves persist immediately; visible family screens refresh every five seconds (not true server-push streaming). External calendar applications control their own refresh intervals; dynamic private team calendar subscription is not newly implemented here.
-- Schedule changes generate generic notifications for currently approved guardians and authorized shared-family recipients, respecting schedule mute preferences. Provider attempts are recorded. Driver plans retain stable event IDs. **Already queued driver reminder emails are not rewritten automatically**; the UI and change notice say to cancel and replace them. Cancelled events cannot create new driver plans or reminders.
+- Schedule changes generate generic notifications for currently approved guardians and authorized shared-family recipients, respecting schedule mute preferences. Provider attempts are recorded. Driver plans retain stable event IDs. **Outdated queued driver reminders are automatically marked for review and cancellation is attempted through Resend**; the assignment is preserved and the family must explicitly authorize a replacement. Failed or uncertain cancellations remain visible and block duplicate sends. Cancelled events cannot create new driver plans or reminders.
 - Hudl PDF uploads at `/coach-tools/` use a **private `SPORTS_FILES` R2 bucket binding**, maximum 5 MB, PDF signature validation, opaque object keys and coach/organization-checked downloads. No public PDF URL or owner email attachment is generated. Uploaded files remain private to the uploading approved coach. **No numeric extraction or public stats publishing is implemented**; a representative Hudl export and reviewed mapping are needed for that next phase.
 
 Additional rollout dependencies:
@@ -117,4 +117,47 @@ Driver names, contact details, plans and delegation permissions are family-side 
 
 Optional coach pickup visibility is a future design item, disabled and unimplemented. If introduced later, it must be explicitly controlled by the parent and limited to the pickup information the parent chooses to share; it must never grant driver-plan editing. No coach-facing pickup toggle or data feed exists in this pilot.
 
-“Stale” refers to a queued reminder containing the schedule details from send/schedule time. The saved plan remains attached to the stable event ID when that event is edited. Already queued reminder emails still require cancellation/replacement by the family. Replacing an uploaded schedule can create new event IDs, so carry-over of old driver assignments must be reviewed rather than assumed.
+“Stale” refers to a queued reminder containing the schedule details from send/schedule time. The saved plan remains attached to the stable event ID when that event is edited. Outdated queued reminder emails are now automatically invalidated and cancellation is attempted. Replacement reminders require explicit authorization from the parent or an authorized family editor. Replacing an uploaded schedule can create new event IDs, so carry-over of old driver assignments must be reviewed rather than assumed.
+
+
+## Driver reminder lifecycle — October 16 follow-up
+
+Implemented in this existing draft branch. No production deployment, feature flag, live record, provider configuration or notification was changed. The repository's existing Cloudflare automation may rebuild a branch preview when commits are pushed; this is not production activation. No preview URL was exercised against real accounts in this work.
+
+### Behavior
+
+- An actual event date, time, title, location/detail or cancellation change invalidates older reminder attempts for that exact team/event. A no-op save leaves reminders alone. SQLite triggers perform invalidation in the same transaction as the schedule write, before background notification delivery. Both the initial override and later revisions are covered.
+- Driver names, addresses, family ownership and stable event IDs remain saved. Family screens show **Replacement reminder needed**, cancellation progress/failure, or an explicit warning that delivery has started. Cancelled events retain visible driver status and cancellation/check controls but cannot send replacements. Restoring an event still requires family review.
+- `schedule-notifications.js` attempts cancellation before generic schedule notices, independently of mute settings. Cancellation uses the existing Resend `POST /emails/{id}/cancel` integration. A matching successful provider receipt, or a subsequent retrieval reporting `canceled`, is required before claiming cancellation. A 404, 409, 429, 5xx, missing key, malformed receipt or timeout alone is never treated as proof of cancellation.
+- `sent`, `delivered`, `opened`, `clicked`, `delivery_delayed`, `bounced` and `complained` mean the attempt has entered delivery and must not be described as recalled. `queued`/unknown status is unresolved. Failed/suppressed provider attempts can be replaced only by an explicit family action.
+- Each reminder captures its schedule revision and attempt number. New sends require the revision displayed to the family; stale dialogs fail rather than silently authorizing new pickup details. Send claims and pre-dispatch checks recheck the revision and delegate edit permission. If a schedule changes while a scheduled send is in flight, the returning provider ID is retained and immediately submitted for cancellation. An immediate send already in flight is marked stale, with a contact-the-driver warning.
+- Cancellation claims use a 60-second recoverable lease. Provider ID, attempt and claim token fence completion writes, so a delayed cancellation or delivery check cannot overwrite a replacement. Multiple schedule edits preserve the latest invalidation and reuse the current cancellation claim. Replaying an old schedule notice cannot cancel a newer authorized reminder.
+- An uncertain send without a provider ID is **blocked**, including send timeouts, malformed success responses and server errors. It is not automatically resent with a new idempotency key. The existing email helper only adds HTTP-status metadata for this decision; its behavior for other callers is unchanged.
+- Parent-only access, explicit family edit grants, school/unknown-kind denial for coach schedule changes, disabled student messaging and pilot activation flags remain in place. Coach responses do not expose driver data. This adds no coach pickup visibility or new school communication path.
+
+### Recovery and limits
+
+There is no autonomous cancellation retry worker. Durable `cancel_pending`, `cancelling` and `cancel_failed` states block another reminder and retain the provider ID. A later schedule notification attempt or the authorized family's **Cancel scheduled reminder** action can retry; interrupted cancellation claims can be reclaimed after 60 seconds. **Check delivery** can reconcile a known provider ID. A failed request must not be mistaken for successful cancellation, and a sent email cannot be recalled.
+
+If execution stops before a provider receipt is stored, `pending`/`send_unconfirmed` stays blocked. A deployment operator must reconcile the attempt against Resend using the original `driver-{plan id}-{attempt}` idempotency key and controlled provider records. Do not clear that state or resend blindly, and do not log family contact details or provider payloads. No recovery send endpoint or provider-ID adoption UI was added.
+
+Background execution is best effort and cancellation may lose a race with delivery. Large fan-out and provider outages can exceed request/runtime limits; unprocessed reminders remain marked for review. A durable scheduled retry service would be a separate rollout dependency if required for a wider pilot. Replacing an entire uploaded schedule can change event IDs and remains outside this event-edit lifecycle; assignments must not be silently carried over.
+
+### Automated verification
+
+Run with Node 24:
+
+```sh
+node --test tests/driver-reminder-lifecycle.test.mjs
+```
+
+All 29 cases pass. The new suite uses fictional `example.test` families, in-memory SQLite and mocked providers only. It verifies exact team/event/family targeting; assignment preservation; no automatic replacement; current-revision authorization; date/time/location/title/cancellation/restoration; no-op changes; provider rejection, missing credentials, timeouts, malformed/mismatched receipts and ambiguous sends; already-delivering/queued/canceled/failed/suppressed states; in-flight sends; simultaneous edits; durable marking before `waitUntil`; muted recipients; expired cancellation leases; late cancellation/check responses; schema migration races; parent/delegate boundaries; revocation before dispatch; and school/disabled-flag gates.
+
+### Required real-provider / isolated-preview checks
+
+1. Use a separate preview D1 database with fictional records, controlled mailboxes and pilot-only credentials. Confirm the additive columns, index and triggers work in deployed D1. No production migration was run here.
+2. Verify the Resend key can cancel and retrieve scheduled emails. Schedule a controlled test reminder, edit its event, verify `canceled` in provider logs and confirm that the original email does not arrive. Authorize a replacement explicitly and verify its current details and actual inbox receipt.
+3. Repeat near the send deadline and with multiple families to measure real delivery races, provider rate limits, error bodies, cancellation latency and Cloudflare background-execution limits. The UI must show uncertainty or already-sent warnings rather than claiming recall.
+4. Test interrupted requests, stale claims and the documented recovery path; validate mobile status refresh, cancelled-event controls, outdated dialogs and trusted-family permissions in separate browser sessions. Mock tests do not prove live inbox delivery, D1 deployment compatibility or device behavior.
+
+Provider references checked for this implementation: [Cancel scheduled email](https://resend.com/docs/api-reference/emails/cancel-email), [Retrieve sent email](https://resend.com/docs/api-reference/emails/retrieve-email), and [API errors](https://resend.com/docs/api-reference/errors).

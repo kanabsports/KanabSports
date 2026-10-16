@@ -1,6 +1,7 @@
 import {allowedChannels} from '../_lib/notification-preferences.js';
 import {sharingSchema,delegated} from '../_lib/family-sharing.js';
-import {scheduleEvents} from '../_lib/team-schedule.js';
+import {BLOCKED_REMINDER_STATES,BLOCKED_REMINDER_SQL,DRIVER_PLAN_FIELDS,driverSchema,cancelDriverReminder,checkDriverDelivery} from '../_lib/driver-reminders.js';
+import {scheduleEvents,scheduleSchema} from '../_lib/team-schedule.js';
 import {accessSchema,parentSession} from '../_lib/parent-access.js';
 import {onRequestGet as teamConnection} from './team-connection.js';
 import {CONNECTIONS} from '../../assets/family-connections.js';
@@ -11,12 +12,12 @@ export async function onRequest({request,env}){
  try{
   await accessSchema(db);
   const parent=await parentSession(request,db);if(!parent)return json({success:false,error:'Sign in to My Family to save drivers and send reminders.'},401);
-  await db.prepare(`CREATE TABLE IF NOT EXISTS family_driver_plans(id TEXT PRIMARY KEY,owner_email TEXT NOT NULL,team_code TEXT NOT NULL,event_id TEXT NOT NULL,driver_name TEXT NOT NULL,driver_email TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'saved',provider_id TEXT,remind_at TEXT,last_error TEXT,attempt INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL)`).run();
+  await driverSchema(db);await scheduleSchema(db);
   if(request.method==='GET'){
-   const plans=(await db.prepare('SELECT id,owner_email,team_code,event_id,driver_name,driver_email,status,remind_at,last_error FROM family_driver_plans WHERE owner_email=? ORDER BY updated_at DESC LIMIT 100').bind(parent.email).all()).results||[];
+   const plans=(await db.prepare(`SELECT ${DRIVER_PLAN_FIELDS} FROM family_driver_plans WHERE owner_email=? ORDER BY updated_at DESC LIMIT 100`).bind(parent.email).all()).results||[];
    if(env.FAMILY_SHARING_ENABLED==='true'){
     await sharingSchema(db);const grants=(await db.prepare("SELECT owner_email,team_codes FROM family_delegates WHERE recipient_email=? AND status='active'").bind(parent.email).all()).results||[];
-    for(const grant of grants)for(const code of JSON.parse(grant.team_codes)){const access=await delegated(db,parent.email,grant.owner_email,code);if(access){const shared=(await db.prepare('SELECT id,owner_email,team_code,event_id,driver_name,driver_email,status,remind_at,last_error FROM family_driver_plans WHERE owner_email=? AND team_code=?').bind(grant.owner_email,code).all()).results||[];plans.push(...shared.map(p=>({...p,can_edit:!!access.can_edit})));}}
+    for(const grant of grants)for(const code of JSON.parse(grant.team_codes)){const access=await delegated(db,parent.email,grant.owner_email,code);if(access){const shared=(await db.prepare(`SELECT ${DRIVER_PLAN_FIELDS} FROM family_driver_plans WHERE owner_email=? AND team_code=?`).bind(grant.owner_email,code).all()).results||[];plans.push(...shared.map(p=>({...p,can_edit:!!access.can_edit})));}}
    }
    return json({success:true,plans});
   }
@@ -33,44 +34,61 @@ export async function onRequest({request,env}){
   if(!team&&owner!==parent.email){const row=await db.prepare("SELECT team_name,organization FROM coach_access_requests WHERE team_code=? AND status='approved' LIMIT 1").bind(code).first();team={name:row?.team_name||row?.organization||code,events:await scheduleEvents(db,code)};}
   if(!team){const url=new URL('/api/team-connection',request.url);url.searchParams.set('code',code);const response=await teamConnection({env,request:new Request(url,{headers:request.headers})});const result=await response.json();if(!response.ok)return json({success:false,error:result.error},response.status);team=result.team;}
   const event=team.events.find(e=>e.id===eventId);if(!event)return json({success:false,error:'This event is no longer on the team schedule.'},404);
-  if(event.cancelled&&!['cancel','check_delivery'].includes(action))return json({success:false,error:'This event is cancelled. Cancel any queued reminder.'},409);
+  if(event.cancelled&&!['cancel','check_delivery'].includes(action))return json({success:false,error:'This event is cancelled. No replacement reminder can be sent. Check the existing reminder status.'},409);
   const id=await sha256(owner+'|'+code+'|'+eventId);
   const previous=await db.prepare('SELECT * FROM family_driver_plans WHERE id=? AND owner_email=?').bind(id,owner).first();
   if(action==='save'){
    const name=clean(body.driver_name,80),email=clean(body.driver_email,254).toLowerCase();
    if(!name||!validEmail(email))return json({success:false,error:'Enter a driver name and valid email address.'},400);
    if(env.FAMILY_SHARING_ENABLED==='true'){await sharingSchema(db);const grant=await db.prepare("SELECT is_driver,status FROM family_delegates WHERE owner_email=? AND recipient_email=?").bind(owner,email).first();if(grant&&(grant.status!=='active'||!grant.is_driver))return json({success:false,error:'The head parent must give this trusted person driver permission first.'},403);}
-   if(previous&&['scheduled','pending'].includes(previous.status))return json({success:false,error:'Cancel the queued reminder before changing the driver.'},409);
-   const saved=await db.prepare(`INSERT INTO family_driver_plans(id,owner_email,team_code,event_id,driver_name,driver_email,status,updated_at) SELECT ?,?,?,?,?,?,'saved',? WHERE ${editGuard} ON CONFLICT(id) DO UPDATE SET driver_name=excluded.driver_name,driver_email=excluded.driver_email,status='saved',last_error=NULL,provider_id=NULL,remind_at=NULL,updated_at=excluded.updated_at WHERE family_driver_plans.status NOT IN ('pending','scheduled') AND ${editGuard}`).bind(id,owner,code,eventId,name,email,now,...editArgs,...editArgs).run();
+   if(previous&&BLOCKED_REMINDER_STATES.includes(previous.status))return json({success:false,error:'Resolve the pending reminder or cancellation before changing the driver.'},409);
+   const saved=await db.prepare(`INSERT INTO family_driver_plans(id,owner_email,team_code,event_id,driver_name,driver_email,status,updated_at) SELECT ?,?,?,?,?,?,'saved',? WHERE ${editGuard} ON CONFLICT(id) DO UPDATE SET driver_name=excluded.driver_name,driver_email=excluded.driver_email,status='saved',last_error=CASE WHEN family_driver_plans.review_required=1 THEN family_driver_plans.last_error ELSE NULL END,provider_id=NULL,remind_at=NULL,updated_at=excluded.updated_at WHERE family_driver_plans.status NOT IN (${BLOCKED_REMINDER_SQL}) AND ${editGuard}`).bind(id,owner,code,eventId,name,email,now,...editArgs,...editArgs).run();
    if(!(saved.meta?.changes??saved.changes))return json({success:false,error:'A reminder is being scheduled. Cancel it before changing drivers.'},409);
    return json({success:true,message:'Driver saved. Choose Send Reminder or Schedule Reminder to notify them.'});
   }
   if(!previous)return json({success:false,error:'Save a driver first.'},400);
   if(action==='check_delivery'){
-   if(!previous.provider_id)return json({success:false,error:'There is no provider receipt yet.'},409);
-   const r=await fetch(`https://api.resend.com/emails/${encodeURIComponent(previous.provider_id)}`,{headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`},signal:AbortSignal.timeout(15000)});
-   const d=await r.json().catch(()=>({}));if(!r.ok)return json({success:false,error:'The provider could not return delivery status. Its API key may require read access.'},502);
-   const event=clean(d.last_event,40),failed=['failed','bounced','suppressed','complained'].includes(event);
-   const status=failed?'failed':['sent','delivered','opened','clicked'].includes(event)?'accepted':previous.status;
-   await db.prepare('UPDATE family_driver_plans SET status=?,last_error=? WHERE id=?').bind(status,failed?`Provider reports ${event}.`:null,id).run();
-   return json({success:!failed,message:`Provider status: ${event||'unknown'}. Inbox placement is not guaranteed.`,error:failed?`Provider reports ${event}.`:undefined},failed?502:200);
+   if(!previous.provider_id)return json({success:false,error:'There is no provider receipt yet. Acceptance may be unresolved; do not send a duplicate reminder.'},409);
+   const result=await checkDriverDelivery(db,env,previous);
+   return json({success:result.ok,message:result.ok?result.message:undefined,error:result.ok?undefined:result.message},result.ok?200:502);
   }
   if(action==='cancel'){
-   if(previous.status!=='scheduled'||!previous.provider_id)return json({success:false,error:'There is no scheduled reminder to cancel.'},409);
-   const r=await fetch(`https://api.resend.com/emails/${encodeURIComponent(previous.provider_id)}/cancel`,{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`},signal:AbortSignal.timeout(15000)});
-   if(!r.ok)return json({success:false,error:'The provider could not cancel this reminder. It may already have been sent. Check delivery before changing the driver.'},502);
-   await db.prepare("UPDATE family_driver_plans SET status='cancelled',updated_at=? WHERE id=?").bind(now,id).run();return json({success:true,message:'The provider cancelled the scheduled reminder.'});
+   const result=await cancelDriverReminder(db,env,previous);
+   return json({success:result.ok,message:result.ok?result.message:undefined,error:result.ok?undefined:result.message},result.ok?200:502);
   }
   if(action!=='remind')return json({success:false,error:'Unknown action.'},400);
   const remindAt=body.remind_at?new Date(body.remind_at):null;
   if(remindAt&&(!Number.isFinite(remindAt.getTime())||remindAt.getTime()<Date.now()+60000||remindAt.getTime()>Date.now()+30*86400000))return json({success:false,error:'Choose a reminder time between one minute and 30 days from now.'},400);
-  if(['pending','scheduled'].includes(previous.status))return json({success:false,error:'A reminder is already pending or scheduled. Cancel it before scheduling another.'},409);
-  const lock=await db.prepare(`UPDATE family_driver_plans SET status='pending',attempt=attempt+1,updated_at=? WHERE id=? AND status NOT IN ('pending','scheduled') AND (status<>'accepted' OR datetime(updated_at)<datetime('now','-5 minutes')) AND ${editGuard}`).bind(now,id,...editArgs).run();
-  if(!(lock.meta?.changes??lock.changes))return json({success:false,error:'A reminder was just sent or is being sent. Wait five minutes before retrying.'},409);
-  if(!(await allowedChannels(db,'parent',previous.driver_email,'logistics')).email){await db.prepare("UPDATE family_driver_plans SET status='muted',updated_at=? WHERE id=?").bind(now,id).run();return json({success:true,message:'This driver has muted logistics emails. The driver plan is saved; no email was sent.'});}
-  const text=`Hi ${previous.driver_name},\n\nYou are the selected driver for ${team.name}.\n${event.title}\n${event.date} · ${event.time}\n${event.detail||''}\n\nPlease confirm pickup details with the parent who arranged this ride. Event details can change; check with the family before travelling.\n\nSent at the request of ${parent.email} for the family of ${owner}.`;
-  const sent=await sendEmail(env,{to:[previous.driver_email],reply_to:parent.email,subject:`Driver reminder · ${team.name}`,text,...(remindAt?{scheduled_at:remindAt.toISOString()}:{})},`driver-${id}-${previous.attempt+1}`);
-  await db.prepare('UPDATE family_driver_plans SET status=?,provider_id=?,remind_at=?,last_error=?,updated_at=? WHERE id=?').bind(sent.accepted?(remindAt?'scheduled':'accepted'):'failed',sent.id||null,remindAt?.toISOString()||null,sent.error||null,now,id).run();
-  return json({success:sent.accepted,message:sent.accepted?(remindAt?'The provider accepted your scheduled reminder.':'The provider accepted the driver reminder. Inbox delivery is not confirmed.'):undefined,error:sent.error},sent.accepted?200:502);
+  if(BLOCKED_REMINDER_STATES.includes(previous.status))return json({success:false,error:'A reminder or cancellation is unresolved. Check delivery or retry cancellation before scheduling another.'},409);
+  const revision=event.revision||0;
+  if((body.event_revision??0)!==revision)return json({success:false,error:'The event changed. Refresh and review the current time and location before authorizing a reminder.'},409);
+  const currentRevision="COALESCE((SELECT revision FROM team_schedule_changes WHERE team_code=? AND event_id=?),0)=?";
+  const lock=await db.prepare(`UPDATE family_driver_plans SET status='pending',attempt=attempt+1,provider_id=NULL,remind_at=?,last_error=NULL,
+    reminder_revision=?,review_required=0,event_cancelled=0,cancel_token=NULL,cancel_started=NULL,updated_at=?
+    WHERE id=? AND attempt=? AND status NOT IN (${BLOCKED_REMINDER_SQL})
+    AND (status<>'accepted' OR datetime(updated_at)<datetime('now','-5 minutes')) AND ${editGuard} AND ${currentRevision} RETURNING *`)
+    .bind(remindAt?.toISOString()||null,revision,now,id,previous.attempt,...editArgs,code,eventId,revision).first();
+  if(!lock)return json({success:false,error:'The schedule, permissions, or reminder changed. Refresh before trying again.'},409);
+  if(!(await allowedChannels(db,'parent',lock.driver_email,'logistics')).email){await db.prepare("UPDATE family_driver_plans SET status='muted',updated_at=? WHERE id=? AND attempt=? AND status='pending'").bind(now,id,lock.attempt).run();return json({success:true,message:'This driver has muted logistics emails. The driver plan is saved; no email was sent.'});}
+  // Recheck after asynchronous preference work. A change during provider I/O is
+  // handled by the trigger plus the fenced receipt update below.
+  const ready=await db.prepare(`UPDATE family_driver_plans SET updated_at=? WHERE id=? AND attempt=? AND status='pending'
+    AND review_required=0 AND ${currentRevision} AND ${editGuard} RETURNING id`).bind(now,id,lock.attempt,code,eventId,revision,...editArgs).first();
+  if(!ready){await db.prepare("UPDATE family_driver_plans SET status='saved' WHERE id=? AND attempt=? AND status='pending'").bind(id,lock.attempt).run();return json({success:false,error:'The schedule or permissions changed before sending. Refresh and review the driver plan.'},409);}
+  const text=`Hi ${lock.driver_name},\n\nYou are the selected driver for ${team.name}.\n${event.title}\n${event.date} · ${event.time}\n${event.detail||''}\n\nPlease confirm pickup details with the parent who arranged this ride. Event details can change; check with the family before travelling.\n\nSent at the request of ${parent.email} for the family of ${owner}.`;
+  const sent=await sendEmail(env,{to:[lock.driver_email],reply_to:parent.email,subject:`Driver reminder · ${team.name}`,text,...(remindAt?{scheduled_at:remindAt.toISOString()}:{})},`driver-${id}-${lock.attempt}`);
+  // A malformed success or server error can hide provider acceptance. Keep the
+  // attempt blocked instead of allowing a fresh idempotency key to duplicate it.
+  const uncertain=sent.delivery==='unconfirmed'||sent.http_status>=500||sent.http_status===408||(sent.http_status>=200&&sent.http_status<300);
+  const status=sent.accepted?(remindAt?'scheduled':'accepted'):(uncertain?'send_unconfirmed':'failed');
+  const error=uncertain?'Provider acceptance is unconfirmed. Do not send another reminder; provider reconciliation is required.':sent.error||null;
+  const completed=await db.prepare(`UPDATE family_driver_plans SET status=CASE
+    WHEN review_required=1 AND ?='scheduled' THEN 'cancel_pending'
+    WHEN review_required=1 AND ?='accepted' THEN 'stale_sent' ELSE ? END,
+    provider_id=?,last_error=?,updated_at=? WHERE id=? AND attempt=? AND status='pending' RETURNING *`)
+    .bind(status,status,status,sent.id||null,error,new Date().toISOString(),id,lock.attempt).first();
+  if(completed?.status==='cancel_pending')await cancelDriverReminder(db,env,completed);
+  if(completed?.review_required)return json({success:false,error:'The event changed while the reminder was being sent. Review its cancellation/delivery status. No replacement has been sent.'},409);
+  return json({success:sent.accepted,message:sent.accepted?(remindAt?'The provider accepted your scheduled reminder.':'The provider accepted the driver reminder. Inbox delivery is not confirmed.'):undefined,error},sent.accepted?200:502);
  }catch(error){console.error('family driver request failed',error?.name);return json({success:false,error:'Could not complete the driver request. Check the saved status before retrying.'},500)}
 }
