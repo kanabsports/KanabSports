@@ -1,0 +1,34 @@
+{
+  "results": [
+    {
+      "schoolId": 2577,
+      "status": "official",
+      "kind": "team",
+      "sport": "Cross Country",
+      "date": "2026-10-14",
+      "meet": "2026 UHSAA State Cross Country Divisionals",
+      "publishedAt": "2026-10-17T16:30:00Z",
+      "id": "athletic-285455-1136647-kanab-team",
+      "team": "Kanab Cowboys",
+      "division": "2A Boys Section A \u00b7 5,000 meters",
+      "place": 5,
+      "mark": "123 points",
+      "sourceUrl": "https://www.athletic.net/CrossCountry/meet/285455/results/1136647"
+    },
+    {
+      "schoolId": 2577,
+      "status": "official",
+      "kind": "team",
+      "sport": "Cross Country",
+      "date": "2026-10-14",
+      "meet": "2026 UHSAA State Cross Country Divisionals",
+      "publishedAt": "2026-10-17T16:30:00Z",
+      "id": "athletic-285455-1136646-kanab-team",
+      "team": "Kanab Cowgirls",
+      "division": "2A Girls Section B \u00b7 5,000 meters",
+      "place": 3,
+      "mark": "83 points",
+      "sourceUrl": "https://www.athletic.net/CrossCountry/meet/285455/results/1136646"
+    }
+  ]
+}

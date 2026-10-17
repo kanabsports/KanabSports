@@ -21,7 +21,7 @@ async function waitForActive(reg){
 async function mount(){
  const host=document.getElementById('coachAppPanel');if(!host)return;
  host.innerHTML='<div style="background:#fff;border:1px solid #deded9;border-radius:18px;padding:22px"><div class="eyebrow">COACH APP</div><h2 style="margin:7px 0 8px;font-size:28px">Put Kanab Sports on your Home Screen.</h2><p style="color:#747780;line-height:1.55;margin:0">Install the Coach Portal like an app, then turn on notifications for score approvals and important coach alerts.</p><div id="coachInstallHelp" style="font-size:13px;color:#747780;line-height:1.5;margin-top:12px"></div><div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:14px"><button id="coachInstall" class="button" type="button" hidden>Install Coach App</button><button id="coachPushEnable" class="button" type="button" hidden>Turn On Notifications</button><button id="coachPushTest" class="button" type="button" hidden style="background:#17191d">Send Test</button><button id="coachPushDisable" class="button" type="button" hidden style="background:#fff;color:#9d2028;border:1px solid #d8a8ab">Turn Off</button></div><div id="coachPushState" style="font-size:13px;color:#747780;margin-top:10px;min-height:20px">Checking this device…</div></div>';
- const panel=notificationPanel(host,{portal:'coach',title:'Coach app & notifications',bottom:document.querySelector('main'),movable:document.getElementById('coach-app')});
+ const panel=notificationPanel(host,{portal:'coach',title:'Coach app & notifications',bottom:document.getElementById('view-settings')||document.querySelector('main'),movable:document.getElementById('coach-app')});
  const q=id=>host.querySelector('#'+id),state=q('coachPushState'),help=q('coachInstallHelp');
  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
  const standalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
@@ -67,4 +67,4 @@ async function mount(){
  q('coachPushDisable').onclick=()=>run(async()=>{if(sub){try{await api({action:'unsubscribe',endpoint:sub.endpoint,token:deviceToken()})}finally{await sub.unsubscribe()}}await refresh()});
  q('coachPushTest').onclick=()=>run(async()=>{if(!sub)return;const d=await api({action:'test',endpoint:sub.endpoint,token:deviceToken()});state.textContent=d.message;if(d.status==='accepted')panel.tested(sub);else panel.error()});
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
+if(document.documentElement.dataset.coachVerified==='true')mount();document.addEventListener('coachsessionready',mount,{once:true});

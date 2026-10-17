@@ -22,7 +22,7 @@ export async function onRequestGet({request,env}){
       source=games.length?'approved schedule update':'';
     }
 
-    if(coach.team_code){const live=await scheduleEvents(db,coach.team_code);if(live.length){games=live.map(e=>({id:e.id,date:e.date,opponent:e.title.replace(/^Game vs /,''),time:e.time,site:e.detail,cancelled:e.cancelled,revision:e.revision}));source='current team schedule';}}
+    if(coach.team_code){const live=await scheduleEvents(db,coach.team_code);if(live.length){games=live.filter(e=>e.type==='game'&&!e.cancelled).map(e=>({id:e.id,date:e.date,opponent:e.title.replace(/^Game vs /,''),time:e.time,site:e.detail,cancelled:e.cancelled,revision:e.revision}));source='current team schedule';}}
     const scores=await approvedScores(db,coach);
     games=games.map(g=>{
       const score=scores.find(s=>sameDate(s.date,g.date)&&sameOpponent(s.opponent,g.opponent));

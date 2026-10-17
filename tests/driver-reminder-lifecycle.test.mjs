@@ -1,3 +1,4 @@
+import {onRequestGet as driverView} from '../functions/api/driver-event.js';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
@@ -83,7 +84,7 @@ test('schedule edits cancel exactly affected families, preserve assignments, req
  await notifySchedule(f.db,f.env,'REC-FICTION','event',1);assert.equal(f.cancellations().length,2,'Replay is idempotent');
  assert.equal((await f.driver('remind',{event_revision:0})).status,409,'Stale dialog cannot authorize new details');
  const replacement=await f.driver('remind',{event_revision:1,remind_at:new Date(Date.now()+7200000).toISOString()});assert.equal(replacement.status,200,JSON.stringify(replacement));
- assert.equal(f.queued().length,5);assert.match(f.queued().at(-1).body.text,/6:30 PM/);assert.match(f.queued().at(-1).body.text,/Fictional North Field/);
+ assert.equal(f.queued().length,5);const liveUrl=f.queued().at(-1).body.text.match(/https:\/\/[^\s]+/)[0];const view=await driverView({env:f.env,request:new Request(liveUrl)});const html=await view.text();assert.match(html,/6:30 PM/);assert.match(html,/Fictional North Field/);assert(!f.queued().at(-1).body.text.includes('6:30 PM'));
  assert.equal(f.plan().review_required,0);assert.equal(f.plan().status,'scheduled');
  assert.notEqual(f.plan().provider_id,before.provider_id);
  await notifySchedule(f.db,f.env,'REC-FICTION','event',1);assert.equal(f.plan().status,'scheduled','An old notice cannot cancel the replacement');

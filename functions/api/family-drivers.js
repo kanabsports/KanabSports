@@ -33,8 +33,9 @@ export async function onRequest({request,env}){
   let team=CONNECTIONS[code];
   if(!team&&owner!==parent.email){const row=await db.prepare("SELECT team_name,organization FROM coach_access_requests WHERE team_code=? AND status='approved' LIMIT 1").bind(code).first();team={name:row?.team_name||row?.organization||code,events:await scheduleEvents(db,code)};}
   if(!team){const url=new URL('/api/team-connection',request.url);url.searchParams.set('code',code);const response=await teamConnection({env,request:new Request(url,{headers:request.headers})});const result=await response.json();if(!response.ok)return json({success:false,error:result.error},response.status);team=result.team;}
-  const event=team.events.find(e=>e.id===eventId);if(!event)return json({success:false,error:'This event is no longer on the team schedule.'},404);
-  if(event.cancelled&&!['cancel','check_delivery'].includes(action))return json({success:false,error:'This event is cancelled. No replacement reminder can be sent. Check the existing reminder status.'},409);
+  if(!CONNECTIONS[code])team.events=await scheduleEvents(db,code);
+  const event=team.events.find(e=>e.id===eventId);if(!event&&!['cancel','check_delivery'].includes(action))return json({success:false,error:'This event is no longer on the team schedule.'},404);
+  if(event?.cancelled&&!['cancel','check_delivery'].includes(action))return json({success:false,error:'This event is cancelled. No replacement reminder can be sent. Check the existing reminder status.'},409);
   const id=await sha256(owner+'|'+code+'|'+eventId);
   const previous=await db.prepare('SELECT * FROM family_driver_plans WHERE id=? AND owner_email=?').bind(id,owner).first();
   if(action==='save'){
@@ -42,7 +43,7 @@ export async function onRequest({request,env}){
    if(!name||!validEmail(email))return json({success:false,error:'Enter a driver name and valid email address.'},400);
    if(env.FAMILY_SHARING_ENABLED==='true'){await sharingSchema(db);const grant=await db.prepare("SELECT is_driver,status FROM family_delegates WHERE owner_email=? AND recipient_email=?").bind(owner,email).first();if(grant&&(grant.status!=='active'||!grant.is_driver))return json({success:false,error:'The head parent must give this trusted person driver permission first.'},403);}
    if(previous&&BLOCKED_REMINDER_STATES.includes(previous.status))return json({success:false,error:'Resolve the pending reminder or cancellation before changing the driver.'},409);
-   const saved=await db.prepare(`INSERT INTO family_driver_plans(id,owner_email,team_code,event_id,driver_name,driver_email,status,updated_at) SELECT ?,?,?,?,?,?,'saved',? WHERE ${editGuard} ON CONFLICT(id) DO UPDATE SET driver_name=excluded.driver_name,driver_email=excluded.driver_email,status='saved',last_error=CASE WHEN family_driver_plans.review_required=1 THEN family_driver_plans.last_error ELSE NULL END,provider_id=NULL,remind_at=NULL,updated_at=excluded.updated_at WHERE family_driver_plans.status NOT IN (${BLOCKED_REMINDER_SQL}) AND ${editGuard}`).bind(id,owner,code,eventId,name,email,now,...editArgs,...editArgs).run();
+   const saved=await db.prepare(`INSERT INTO family_driver_plans(id,owner_email,team_code,event_id,driver_name,driver_email,status,updated_at) SELECT ?,?,?,?,?,?,'saved',? WHERE ${editGuard} ON CONFLICT(id) DO UPDATE SET driver_name=excluded.driver_name,driver_email=excluded.driver_email,status='saved',last_error=CASE WHEN family_driver_plans.review_required=1 THEN family_driver_plans.last_error ELSE NULL END,provider_id=NULL,remind_at=NULL,event_token_hash=NULL,event_token_expires=NULL,updated_at=excluded.updated_at WHERE family_driver_plans.status NOT IN (${BLOCKED_REMINDER_SQL}) AND ${editGuard}`).bind(id,owner,code,eventId,name,email,now,...editArgs,...editArgs).run();
    if(!(saved.meta?.changes??saved.changes))return json({success:false,error:'A reminder is being scheduled. Cancel it before changing drivers.'},409);
    return json({success:true,message:'Driver saved. Choose Send Reminder or Schedule Reminder to notify them.'});
   }
@@ -75,7 +76,11 @@ export async function onRequest({request,env}){
   const ready=await db.prepare(`UPDATE family_driver_plans SET updated_at=? WHERE id=? AND attempt=? AND status='pending'
     AND review_required=0 AND ${currentRevision} AND ${editGuard} RETURNING id`).bind(now,id,lock.attempt,code,eventId,revision,...editArgs).first();
   if(!ready){await db.prepare("UPDATE family_driver_plans SET status='saved' WHERE id=? AND attempt=? AND status='pending'").bind(id,lock.attempt).run();return json({success:false,error:'The schedule or permissions changed before sending. Refresh and review the driver plan.'},409);}
-  const text=`Hi ${lock.driver_name},\n\nYou are the selected driver for ${team.name}.\n${event.title}\n${event.date} · ${event.time}\n${event.detail||''}\n\nPlease confirm pickup details with the parent who arranged this ride. Event details can change; check with the family before travelling.\n\nSent at the request of ${parent.email} for the family of ${owner}.`;
+   const eventToken=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');
+   const tokenSaved=await db.prepare("UPDATE family_driver_plans SET event_token_hash=?,event_token_expires=? WHERE id=? AND attempt=? AND status='pending' AND review_required=0 RETURNING id").bind(await sha256(eventToken),Date.now()+45*86400000,id,lock.attempt).first();
+   if(!tokenSaved)return json({success:false,error:'The event changed before sending. Refresh the driver plan.'},409);
+   const eventUrl=new URL('/api/driver-event?token='+eventToken,request.url).href;
+  const text=`Hi ${lock.driver_name},\n\nThe parent who selected you as a driver has asked you to check the current travel details for ${team.name}.\n\nOpen current event details: ${eventUrl}\n\nThis private link shows only this event, not the family roster or messages. It expires after 45 days or when this reminder is cancelled or replaced. Confirm pickup and whether the ride is still needed with ${parent.email}.\n\nSent at the request of ${parent.email}.`;
   const sent=await sendEmail(env,{to:[lock.driver_email],reply_to:parent.email,subject:`Driver reminder · ${team.name}`,text,...(remindAt?{scheduled_at:remindAt.toISOString()}:{})},`driver-${id}-${lock.attempt}`);
   // A malformed success or server error can hide provider acceptance. Keep the
   // attempt blocked instead of allowing a fresh idempotency key to duplicate it.

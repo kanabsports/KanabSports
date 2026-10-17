@@ -16,7 +16,7 @@ export async function driverSchema(db) {
   for (const [name, type] of Object.entries({
     reminder_revision: 'INTEGER NOT NULL DEFAULT 0', invalidated_revision: 'INTEGER NOT NULL DEFAULT 0',
     review_required: 'INTEGER NOT NULL DEFAULT 0', event_cancelled: 'INTEGER NOT NULL DEFAULT 0',
-    cancel_token: 'TEXT', cancel_started: 'INTEGER'
+    cancel_token: 'TEXT', cancel_started: 'INTEGER', event_token_hash: 'TEXT', event_token_expires: 'INTEGER'
   })) {
     if (columns.some(c => c.name === name)) continue;
     try { await db.prepare(`ALTER TABLE family_driver_plans ADD COLUMN ${name} ${type}`).run(); }
@@ -97,8 +97,8 @@ export async function cancelDriverReminder(db, env, plan) {
   return {ok: !!updated && result.status === 'cancelled', message: result.error || 'The provider confirmed cancellation. The driver assignment is saved. Review the current event before authorizing a replacement.'};
 }
 
-export async function cancelAffectedDriverReminders(db, env, code, eventId) {
-  if (env.PRIVATE_MESSAGING_ENABLED !== 'true') return;
+export async function cancelAffectedDriverReminders(db, env, code, eventId, {authorizedPracticeWorkflow=false}={}) {
+  if (env.PRIVATE_MESSAGING_ENABLED !== 'true' && !authorizedPracticeWorkflow) return;
   const policy = await teamPolicy(db, code);
   if (!policy || !['rec','travel'].includes(policy.kind) || policy.school_id) return;
   await driverSchema(db);

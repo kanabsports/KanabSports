@@ -1,13 +1,17 @@
-import {scheduleEvents} from '../_lib/team-schedule.js';
+import {teamEvents} from '../_lib/team-events.js';
+import {pilotSchema} from '../_lib/pilot-schema.js';
+import {sha256} from '../_lib/coach-auth.js';
 import {teamPolicy} from '../_lib/school-access.js';
 import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
 import {ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
 
-export async function onRequestGet({request,env}){
+export async function onRequestGet(context){const response=await loadTeam(context);if(response.ok){try{const db=context.env.SPORTS_DB,code=new URL(context.request.url).searchParams.get('code')?.toUpperCase(),policy=await teamPolicy(db,code),parent=await parentSession(context.request,db);if(parent&&['rec','travel'].includes(policy?.kind)){await pilotSchema(db);await db.prepare('INSERT OR IGNORE INTO pep_family_activity VALUES(?,?,?)').bind(code,await sha256(parent.email),new Date().toLocaleDateString('en-CA',{timeZone:'America/Denver'})).run()}}catch{ /* Measurement must not interrupt family access. */ }}return response}
+// Internal principal is supplied only after calendar/driver token verification.
+export async function loadTeam({request,env},principal=null){
   if(!env.SPORTS_DB)return json({success:false,error:'Team connection is temporarily unavailable.'},503);
   const db=env.SPORTS_DB;
   try{
-    await ensureCoachCore(db);await schema(db);await accessSchema(db);
+    await ensureCoachCore(db);await teamSchema(db);await accessSchema(db);
     const code=clean(new URL(request.url).searchParams.get('code'),40).toUpperCase();
     if(!/^[A-Z0-9_-]{1,32}$/.test(code))return json({success:false,error:'Invalid team code.'},400);
 
@@ -22,11 +26,10 @@ export async function onRequestGet({request,env}){
     const primary=coaches[0],team=primary.team_name||primary.organization||primary.sport;
     const policy=await teamPolicy(db,code);const category=policy?.kind==='school'?'school':'rec';
 
-    const parent=await parentSession(request,db);
-    if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?'Your school must approve your guardian access before you can view private team information.':'Sign in to My Family, then request school-approved guardian access.'},parent?403:401);
+    const parent=principal||await parentSession(request,db);
+    if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?`Your ${category==='school'?'school':'team administrator'} must approve your guardian access before you can view private team information.`:`Sign in to My Family, then request ${category==='school'?'school':'team'} approval for guardian access.`},parent?403:401);
 
-    const events=await scheduleEvents(db,code);
-
+    const events=await teamEvents(db,code);
     const messages=(await db.prepare(`
       SELECT id,author,body,created_at
       FROM coach_team_messages
@@ -35,6 +38,7 @@ export async function onRequestGet({request,env}){
       LIMIT 50
     `).bind(code).all()).results||[];
 
+    await pilotSchema(db);const receipts=(await db.prepare('SELECT message_id FROM pep_message_receipts WHERE email=? AND team_code=?').bind(parent.email,code).all()).results||[];const acknowledged=new Set(receipts.map(x=>x.message_id));
     return json({
       success:true,
       team:{
@@ -46,7 +50,7 @@ export async function onRequestGet({request,env}){
         coach:coaches.map(c=>({name:c.name,role:c.role})),
         color:'#e32636',
         url:'/',
-        messages:messages.map(m=>({id:m.id,author:m.author,body:m.body,created:m.created_at,date:formatDate(m.created_at)})),
+        messages:messages.map(m=>({id:m.id,author:m.author,body:m.body,created:Date.parse(m.created_at.replace(' ','T')+'Z'),acknowledged:acknowledged.has(m.id),date:formatDate(m.created_at)})),
         events
       }
     });
@@ -56,7 +60,7 @@ export async function onRequestGet({request,env}){
   }
 }
 
-async function schema(db){
+export async function teamSchema(db){
   await db.prepare(`CREATE TABLE IF NOT EXISTS coach_team_messages(
     id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,team_code TEXT NOT NULL,author TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`).run();

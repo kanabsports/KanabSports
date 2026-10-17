@@ -10,7 +10,7 @@ export async function onRequest({request,env,waitUntil}){
  if(!canManageAssistants(coach))return json({error:'Only the approved head coach can edit the team schedule in this pilot.'},403);
  const raw=await request.text();if(raw.length>4000)return json({error:'Request too large.'},413);const b=JSON.parse(raw),code=String(b.team_code||'');
  if(!await db.prepare(eligibleSQL+' AND a.id=? AND t.team_code=?').bind(coach.id,code).first())return json({error:'This team is not available.'},403);
- const current=(await scheduleEvents(db,code)).find(e=>e.id===b.event_id);if(!current)return json({error:'Event no longer exists in the approved schedule.'},404);
+ const current=(await scheduleEvents(db,code)).find(e=>e.id===b.event_id);if(current?.type==='practice')return json({error:'Use Practices in the Coach Portal to edit this practice.'},409);if(!current)return json({error:'Event no longer exists in the approved schedule.'},404);
  if(!/^20\d{2}-\d{2}-\d{2}$/.test(b.date)||!Number.isFinite(Date.parse(b.date+'T00:00:00Z'))||new Date(b.date+'T00:00:00Z').toISOString().slice(0,10)!==b.date||typeof b.time!=='string'||b.time.length>50||typeof b.title!=='string'||!b.title.trim()||b.title.length>140||typeof b.detail!=='string'||b.detail.length>300||typeof b.cancelled!=='boolean'||!Number.isInteger(b.revision))return json({error:'Enter a valid date, time, title and location.'},400);
  if(b.revision!==current.revision)return json({error:'Another change was saved. Refresh before editing.'},409);
  if(['date','time','title','detail'].every(k=>String(current[k]||'')===b[k].trim())&&!!current.cancelled===b.cancelled)return json({saved:true,revision:current.revision,message:'No schedule details changed.'});

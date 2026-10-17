@@ -34,7 +34,7 @@
 
 <section class="pane" id="pane-kids" hidden><div class="welcome"><div><div class="eyebrow">MY KIDS</div><h2>Manage your family.</h2><p class="muted">Add your kids here, then connect their teams. A nickname or initials work too.</p></div></div><section class="panel"><div id="kidsList" class="kids-list"></div></section></section>
 
-<section class="pane" id="pane-schedule" hidden><div class="welcome"><div><div class="eyebrow">FAMILY SCHEDULE</div><h2>Everything coming up.</h2><p class="muted">Games and practices from all saved teams in one view. Overlaps are flagged automatically.</p></div></div><section class="panel"><div id="fullSchedule" class="schedule-list"></div></section><section class="panel" id="calendarPanel" hidden><h3>Keep your calendar updated.</h3><p class="note">Subscribe to the school and rec schedules shown here. Changes refresh automatically in your calendar app, sometimes hours later. Use Kanab Sports for urgent updates. Adding another team later? Subscribe again for the new selection.</p><div id="calendarLinks" class="team-actions"></div><p class="note">Google Calendar: add the subscription in a desktop browser; it will then appear in the mobile app. No child names are included in the calendar link.</p><p id="calendarStatus" class="note" role="status"></p></section></section>
+<section class="pane" id="pane-schedule" hidden><div class="welcome"><div><div class="eyebrow">FAMILY SCHEDULE</div><h2>Everything coming up.</h2><p class="muted">Games and practices from all saved teams in one view. Known time overlaps are flagged automatically. Events without an end time may have additional conflicts.</p></div></div><section class="panel"><div id="fullSchedule" class="schedule-list"></div></section><section class="panel" id="calendarPanel" hidden><h3>Keep your calendar updated.</h3><p class="note">Subscribe to the school and rec schedules shown here. Changes refresh automatically in your calendar app, sometimes hours later. Use Kanab Sports for urgent updates. Adding another team later? Subscribe again for the new selection.</p><div id="calendarLinks" class="team-actions"></div><p class="note">Google Calendar: add the subscription in a desktop browser; it will then appear in the mobile app. No child names are included in the calendar link.</p><p id="calendarStatus" class="note" role="status"></p></section></section>
 
 <section class="pane" id="pane-teams" hidden><div class="welcome"><div><div class="eyebrow">TEAM INFO</div><h2>Your saved teams.</h2><p class="muted">Open the public team page, share it with another parent, or update who you’re following.</p></div><button class="btn primary small" id="addTeamTeams">+ Add Team</button></div><section class="panel"><div id="allTeams" class="team-stack"></div></section></section>
 
@@ -44,6 +44,7 @@
 </main>
 </div>
 
+<section class="panel" style="max-width:1100px;margin:24px auto;padding:22px"><h3>Registered for a sport?</h3><p>Connect teams approved for your verified email without entering team codes. Use the parent email from registration. Add optional child labels afterward.</p><button type="button" class="btn primary" id="connectApproved">Find my approved teams</button> <a class="btn ghost" href="/signup/">Need to register?</a><p id="connectStatus" role="status" class="note"></p></section>
 <footer class="family-footer">Kanab Sports · Your community, connected.<div class="pep">powered by <b>pep</b></div><p id="saveStatus" role="status"></p></footer>
 <div class="add-panel" id="addPanel" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle"><div class="eyebrow">ADD A TEAM</div><h2 id="addTitle">Connect your sports.</h2><p>School, rec, and travel codes are available to enter here. Only one is needed to get started.</p><form id="addForm"><div id="connectionFields"><label for="schoolCode">School code · optional</label><input id="schoolCode" autocomplete="off" autocapitalize="characters" placeholder="Example: KANAB-HS"><label for="teamCode">Rec / travel team code · optional</label><input id="teamCode" autocomplete="off" autocapitalize="characters" placeholder="Example: KS-ABC123"><p class="note">Enter either code or both. Leave the other blank if you don’t need it. School codes follow school sports; rec/travel codes connect your coach’s team.</p></div><label for="childLabel">Kid’s name or label <span style="font-weight:600;color:var(--muted)">· optional</span></label><input id="childLabel" autocomplete="off" placeholder="Nickname, initials, or leave blank"><p class="note" style="margin:6px 0 0">No child name is required. Leave this blank and Kanab Sports will use a simple label like Kid 1.</p><div id="addStatus" class="status" role="status"></div><div class="sheet-actions"><button type="button" class="btn ghost" id="cancelAdd">Cancel</button><button type="submit" class="btn primary">Add Team</button></div></form></div></div>
 
@@ -55,6 +56,7 @@
 
 <script type="module">
 import {mountFamilySharing} from '/assets/family-sharing.js';
+import {conflicts,eventKey} from '/assets/family-event-times.mjs';
 import {createDriverPlans} from '/assets/family-drivers.js';
 
 import {loadSchoolNotices} from "/assets/school-parent-notices.mjs";
@@ -81,7 +83,7 @@ function saveNormalized(a){localStorage.setItem(KEY,JSON.stringify(normalized(a)
 function teamData(s){return registry[s.code]}
 function future(s){const t=teamData(s),date=today(),parts=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Denver',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date()).split(':'),now=Number(parts[0])*60+Number(parts[1]);return t?t.events.filter(e=>(e.endDate||e.date)>date||(e.endDate||e.date)===date&&(e.endDate>e.date||timeMinutes(e.time)>=now)):[]}
 function familyEvents(filterChild=''){const rows=read().filter(s=>!activeCategory||teamData(s)?.category===activeCategory).flatMap(s=>future(s).map(e=>({s,t:teamData(s),e}))).filter(x=>!filterChild||x.s.child===filterChild);return [...new Map(rows.map(x=>[x.s.code+'|'+x.e.id+'|'+x.e.date+'|'+x.e.title,x])).values()].sort((a,b)=>eventSort(a.e,b.e))}
-function conflictMap(events){const m={};events.forEach(x=>{if(!/AM|PM/.test(x.e.time))return;const k=x.e.date+'|'+x.e.time;(m[k]||(m[k]=[])).push(x)});return m}
+
 function chips(){
  const names=[...new Set(read().map(x=>x.child).filter(Boolean))],host=$('childChips');host.innerHTML='';
  if(!names.length)return;
@@ -89,9 +91,9 @@ function chips(){
  names.forEach(n=>{const b=document.createElement('button');b.className='chip'+(activeChild===n?' active':'');b.textContent=n;b.dataset.child=n;host.append(b)});
 }
 function scheduleHtml(events,limit=99){
- const visible=events.slice(0,limit),conf=conflictMap(events);
+ const visible=events.slice(0,limit),conf=conflicts(events);
  if(!visible.length)return '<div class="empty"><h3>Nothing scheduled yet.</h3><p>Add a team and its upcoming events will appear here.</p></div>';
- return visible.map(({s,t,e})=>{const x=md(e.date),key=e.date+'|'+e.time,clash=(conf[key]||[]).length>1;return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+(e.cancelled?' · CANCELLED':'')+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Schedule overlap · '+conf[key].length+' events</div>':'')+driverPlans.markup(s,e)+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
+ return visible.map(({s,t,e})=>{const x=md(e.date),key=eventKey({s,e}),clash=!!conf[key];return '<div class="schedule-row"><div class="datebox"><span>'+esc(x.m)+'</span><strong>'+x.d+'</strong></div><div><div class="event-title"><a href="'+esc(e.url||t.url)+'">'+esc(t.name)+'</a></div><div class="event-meta">'+esc(e.time)+' · '+esc(e.title)+(e.cancelled?' · CANCELLED':'')+' · '+esc(e.detail)+'</div>'+(clash?'<div class="conflict">Possible schedule conflict · '+(conf[key].size+1)+' events</div>':'')+driverPlans.markup(s,e)+'</div><span class="event-type '+esc(e.type)+'">'+esc(e.type)+'</span></div>'}).join('');
 }
 function displayKidLabel(saved,index=0){return saved.child&&saved.child.trim()?saved.child.trim():'Kid '+(index+1)}
 function teamCard(s,index=0){
@@ -128,10 +130,9 @@ function render(filterChild=activeChild){
  const coaches=[...new Set(scope.flatMap(s=>teamData(s)?.coach||[]))];
  $('coachList').innerHTML=coaches.length?coaches.map(c=>'<div class="coach"><strong>'+esc(c)+'</strong><small>Coach on one of your saved teams</small></div>').join(''):'<p class="muted">Your coaches will appear after you add a team.</p>';
  const messages=[...new Map(scope.flatMap(s=>(teamData(s)?.messages||[]).map(m=>({s,m,t:teamData(s)}))).map(x=>[x.s.code+'|'+x.m.id,x])).values()].sort((a,b)=>b.m.created-a.m.created);
- $('messageList').innerHTML=messages.length?messages.map(({s,m,t})=>'<div class="message"><strong>'+esc(t.name)+'</strong><small>'+esc(m.author+' · '+(m.date||''))+'</small><p>'+esc(m.body)+'</p></div>').join(''):'';
+ $('messageList').innerHTML=messages.length?messages.map(({s,m,t})=>'<div class="message"><strong>'+esc(t.name)+'</strong><small>'+esc(m.author+' · '+(m.date||''))+'</small><p>'+esc(m.body)+'</p>'+(!CONNECTIONS[s.code]?'<button class="btn ghost small" data-ack-team="'+esc(s.code)+'" data-ack-message="'+esc(m.id)+'" '+(m.acknowledged?'disabled':'')+'>'+(m.acknowledged?'Acknowledged':'Got it')+'</button>':'')+'</div>').join(''):'';
  $('homeUpdates').innerHTML=messages.length?messages.slice(0,2).map(x=> '<div class="home-update-item"><div class="update-icon">!</div><div class="update-copy"><strong>'+esc(x.t.name)+'</strong><small>'+esc(x.m.date||'Latest update')+'</small><div style="margin-top:5px;line-height:1.45">'+esc(x.m.body.slice(0,160)+(x.m.body.length>160?'…':''))+'</div></div><button class="update-action" type="button" data-go="messages">Open →</button></div>').join(''):(saved.length?'<div class="caught-up"><span class="caught-up-mark">✓</span><span><strong style="color:var(--ink)">You’re caught up.</strong><br>No new coach updates or schedule changes.</span></div>':'<div class="caught-up"><span class="caught-up-mark">+</span><span><strong style="color:var(--ink)">Updates will live here.</strong><br>Add a team and you won’t have to hunt through texts for changes.</span></div>');
- if(activePane==='messages'&&messages.length)localStorage.setItem('ksUpdatesSeen',String(messages[0].m.created));
- const unread=messages.filter(x=>x.m.created>Number(localStorage.getItem('ksUpdatesSeen')||0)).length;
+ const unread=messages.filter(x=>!CONNECTIONS[x.s.code]&&!x.m.acknowledged).length;
  const badge=$('updatesBadge');if(badge){badge.hidden=!unread;badge.textContent=String(unread)}
  const name=account?.name||profile().name||'';$('welcomeTitle').textContent=activeCategory?(categoryLabel(activeCategory)+' · What’s next'):name?'Hi '+name.split(' ')[0]+'. Here’s what’s next.':'Your sports, simplified.';
  renderAccount();
@@ -139,7 +140,16 @@ function render(filterChild=activeChild){
 function renderCalendar(saved){
  const codes=[...new Set(saved.filter(x=>teamData(x)).map(x=>x.code))];$('calendarPanel').hidden=!codes.length;
  if(!codes.length)return;
- const url=location.origin+'/api/family-calendar?codes='+encodeURIComponent(codes.join(','));
+ if(codes.some(c=>!CONNECTIONS[c])){
+ $('calendarLinks').innerHTML='<button class="btn primary small" id="createCalendar">Create private calendar link</button><button class="btn ghost small" id="revokeCalendars">Revoke private links</button>';
+ $('calendarStatus').textContent='Private links last 90 days. Anyone with the link, including your calendar provider, can read these team schedules. No child names or messages are included.';
+ const act=async(action)=>{const r=await fetch('/api/family-calendar-access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,codes})});const d=await r.json();if(!r.ok)throw Error(d.error);return d;};
+ $('createCalendar').onclick=async()=>{try{const d=await act('create');calendarButtons(d.url);$('calendarStatus').textContent='Private link created. Expires '+new Date(d.expires).toLocaleDateString()+'. Keep it private. Refresh this view to revoke all private links.';}catch(e){$('calendarStatus').textContent=e.message}};
+ $('revokeCalendars').onclick=async()=>{try{const d=await act('revoke');$('calendarStatus').textContent=d.message}catch(e){$('calendarStatus').textContent=e.message}};return;
+ }
+ calendarButtons(location.origin+'/api/family-calendar?codes='+encodeURIComponent(codes.join(',')));
+}
+function calendarButtons(url){
  const webcal=url.replace(/^https?:/, 'webcal:');
  $('calendarLinks').innerHTML='<a class="btn primary small" href="'+esc(webcal)+'">Apple Calendar</a><a class="btn ghost small" target="_blank" rel="noopener" href="https://calendar.google.com/calendar/u/0/r?cid='+encodeURIComponent(webcal)+'">Google Calendar</a><button class="btn ghost small" id="copyCalendar">Copy link for Outlook / other</button>';
  $('copyCalendar').onclick=async()=>{try{await navigator.clipboard.writeText(url);$('calendarStatus').textContent='Link copied. In Outlook: Add calendar → Subscribe from web → paste this link.';}catch{$('calendarStatus').textContent='Copy this subscription link: '+url;}};
@@ -150,7 +160,7 @@ function renderAccount(){
  $('syncCopy').innerHTML=signed?'<span class="status-good">Signed in as '+esc(account.email)+'</span><br>Your saved teams and kids are stored with your free parent account.':'Sign in with your email and 6-digit PIN to restore your saved teams and kids. New here? Create a free account first.';
  $('syncButton').textContent=signed?'Sign Out':'Sign In / Create Account';$('returningFamily').hidden=signed;$('managePin').hidden=!signed;
 }
-function go(name){activePane=name;$('connectionTabs').hidden=['kids','settings'].includes(name)||!read().some(x=>teamData(x));if(name==='messages'){localStorage.setItem('ksUpdatesSeen',String(Date.now()));$('updatesBadge').hidden=true;}document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);document.querySelectorAll('.rail button[data-pane]').forEach(b=>{b.classList.toggle('active',b.dataset.pane===name);if(b.dataset.pane===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});window.scrollTo({top:0,behavior:'smooth'})}
+function go(name){activePane=name;$('connectionTabs').hidden=['kids','settings'].includes(name)||!read().some(x=>teamData(x));document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);document.querySelectorAll('.rail button[data-pane]').forEach(b=>{b.classList.toggle('active',b.dataset.pane===name);if(b.dataset.pane===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});window.scrollTo({top:0,behavior:'smooth'})}
 function openAdd(prefill='',child=''){addMode='team';$('addPanel').querySelector('.eyebrow').textContent='SCHOOL & REC';$('addPanel').hidden=false;$('connectionFields').hidden=false;$('schoolCode').value='';$('teamCode').value=prefill;$('childLabel').value=child;$('addTitle').textContent='Connect your sports.';$('addTitle').nextElementSibling.textContent='Enter a school code, a rec/travel team code, or both. You only need the ones your family uses.';$('addForm').querySelector('[type=submit]').textContent='Save Connections';$('addStatus').textContent='';setTimeout(()=>$('schoolCode').focus(),20)}
 function openKid(){openAdd();addMode='kid';$('addPanel').querySelector('.eyebrow').textContent='ADD A KID';$('addTitle').textContent='Add a kid.';$('addTitle').nextElementSibling.textContent='Use a nickname, initials, or leave it blank. You can connect school or rec later.';$('connectionFields').hidden=true;$('addForm').querySelector('[type=submit]').textContent='Add Kid';setTimeout(()=>$('childLabel').focus(),25)}
 async function resolveTeamCode(code,refresh=false){
@@ -202,6 +212,8 @@ function accountView(mode){$('accountLogin').hidden=mode!=='login';$('accountSta
 function openAccount(mode='login'){$('accountPanel').hidden=false;accountView(mode);['accountStatus','loginStatus','codeStatus'].forEach(id=>$(id).textContent='');const p=profile();$('parentName').value=account?.name||p.name||'';$('parentEmail').value=account?.email||p.email||'';$('loginEmail').value=account?.email||p.email||'';setTimeout(()=>$(mode==='login'?'loginEmail':'parentName').focus(),20)}
 function closeAccount(){$('accountPanel').hidden=true;['parentCode','loginPin','newParentPin','confirmParentPin'].forEach(id=>$(id).value='')}
 $('schoolMessagePreferences').onclick=async()=>{if(!account){openAccount();return}await loadSchoolNotices($('schoolParentNotices'),loadFeed,true);go('home');$('schoolParentNotices').scrollIntoView({behavior:'smooth'});};
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-ack-message]');if(!b)return;b.disabled=true;try{const r=await fetch('/api/family-message-receipts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({team_code:b.dataset.ackTeam,message_id:b.dataset.ackMessage})});const d=await r.json();if(!r.ok)throw Error(d.error);await loadFeed()}catch(err){b.disabled=false;b.textContent='Retry acknowledgment';$('saveStatus').textContent=err.message}});
+$('connectApproved').onclick=async()=>{if(!account){openAccount();return}const b=$('connectApproved');b.disabled=true;try{clearTimeout(syncTimer);await syncChain;await api({action:'save_family',entries:normalized(read()).map(x=>({entry_id:x.entryId,team_code:x.code,child_name:x.child,created:x.addedAt}))});const d=await api({action:'connect_approved'});await loadAccount();$('connectStatus').textContent=d.message;go('home')}catch(e){$('connectStatus').textContent=e.message}finally{b.disabled=false}};
 $('managePin').onclick=()=>openAccount('setup');$('returningSignIn').onclick=()=>openAccount();$('newFamilyAccount').onclick=()=>openAccount('setup');
 $('createAccount').onclick=$('resetPin').onclick=()=>{$('parentEmail').value=$('loginEmail').value;accountView('setup');$('parentName').focus()};
 $('backLogin').onclick=()=>accountView('login');
