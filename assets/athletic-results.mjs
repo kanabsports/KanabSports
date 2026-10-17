@@ -3,7 +3,7 @@ export function officialResults(feed,now=Date.now()){
  const seen=new Set();return (Array.isArray(feed?.results)?feed.results:[]).filter(r=>{
   let url;try{url=new URL(r.sourceUrl)}catch{return false}
   const day=Date.parse(r.date+'T12:00:00Z'),published=Date.parse(r.publishedAt);
-  if(!r.id||seen.has(r.id)||r.schoolId!==2577||r.status!=='official'||!['team','individual'].includes(r.kind)||!['Cross Country','Track & Field'].includes(r.sport)||!Number.isInteger(r.place)||r.place<1||!r.team||!r.meet||!r.division||!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||!Number.isFinite(day)||new Date(day).toISOString().slice(0,10)!==r.date||day>now+86400000||now-day>14*86400000||!Number.isFinite(published)||published>now||url.protocol!=='https:'||!['athletic.net','www.athletic.net'].includes(url.hostname)||url.username||url.password||!/^\/(CrossCountry|TrackAndField)\/meet\/\d+\/results\//i.test(url.pathname))return false;
+  if(!r.id||seen.has(r.id)||r.schoolId!==2577||r.status!=='official'||!['team','individual'].includes(r.kind)||!['Cross Country','Track & Field'].includes(r.sport)||!Number.isInteger(r.place)||r.place<1||!r.team||!r.meet||!r.division||(r.kind==='individual'&&!r.athlete)||!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||!Number.isFinite(day)||new Date(day).toISOString().slice(0,10)!==r.date||r.date>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Denver'}).format(new Date(now))||now-day>14*86400000||!Number.isFinite(published)||published>now||url.protocol!=='https:'||!['athletic.net','www.athletic.net'].includes(url.hostname)||url.username||url.password||!/^\/(CrossCountry|TrackAndField)\/meet\/\d+\/results\//i.test(url.pathname))return false;
   seen.add(r.id);return true;
  }).sort((a,b)=>b.date.localeCompare(a.date)||a.id.localeCompare(b.id));
 }
