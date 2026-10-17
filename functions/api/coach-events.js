@@ -1,3 +1,4 @@
+import {cancelAffectedDriverReminders} from '../_lib/driver-reminders.js';
 import {getCoach,ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
 import {teamPolicy,messagingGate} from '../_lib/school-access.js';
 import {teamSchema} from './team-connection.js';
@@ -25,12 +26,13 @@ export async function onRequest({request,env}){
  const gate=await messagingGate(db,code);if(!gate.allowed)return json({error:gate.reason},403);
  const recent=await db.prepare('SELECT COUNT(*) n FROM pep_event_changes WHERE team_code=? AND updated>?').bind(code,Date.now()-60000).first();if(recent.n>=10)return json({error:'Please wait a minute before making more changes.'},429);
  const version=expected+1,event={id,date,endDate:date,time,endTime,title,detail,type:old?.type||'practice',url:'/',cancelled,version,changeId};
- const body=`${cancelled?'Cancelled':old?'Schedule changed':'Practice added'}: ${title}\n${date} · ${time}–${endTime}\n${detail}\nPlease open My Family for the current schedule and tap Got it on this update. Driver reminder links show current event details; reminder send times do not automatically move.`;
+ const body=`${cancelled?'Cancelled':old?'Schedule changed':'Practice added'}: ${title}\n${date} · ${time}–${endTime}\n${detail}\nPlease open My Family for the current schedule and tap Got it on this update. Driver reminder links show current event details; old scheduled reminders are cancelled where possible. Parents must review cancellation and approve a replacement.`;
  const result=await db.batch([
  db.prepare('INSERT INTO pep_event_changes VALUES(?,?,?,?,?) ON CONFLICT(team_code,event_id) DO UPDATE SET event_json=excluded.event_json,version=excluded.version,updated=excluded.updated WHERE pep_event_changes.version=?').bind(code,id,JSON.stringify(event),version,Date.now(),expected),
  db.prepare("INSERT INTO coach_team_messages(id,coach_id,team_code,author,body,created_at) SELECT ?,?,?,?,?,datetime('now') FROM pep_event_changes WHERE team_code=? AND event_id=? AND json_extract(event_json,'$.changeId')=?").bind(changeId,coach.id,code,coach.name,body,code,id,changeId)
  ]);
  if(!(result[0].meta?.changes??result[0].changes))return json({error:'Another coach updated the event. Reload before trying again.'},409);
+ await cancelAffectedDriverReminders(db,env,code,id,{authorizedPracticeWorkflow:true});
  let pushed={accepted:0,failed:0};if(result[1].meta?.changes??result[1].changes){try{pushed=await notifyTeam(db,code,changeId)}catch{pushed.failed=1}}
  return json({success:true,version,push:pushed,message:'Schedule and family announcement saved together. '+(pushed.accepted?'App notifications accepted; delivery and reading are not confirmed.':'No app notification was confirmed. The update remains in My Family until acknowledged.')});
  }catch{return json({error:'Could not confirm the change. Retry this same form before creating another update.'},500)}

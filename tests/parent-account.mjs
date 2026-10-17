@@ -17,7 +17,7 @@ const a=await call({...aChallenge,pin:'012345'});assert.equal(a.status,200);asse
 let stored=sql.prepare('SELECT * FROM parent_pins WHERE email=?').get('a@example.test');assert.notEqual(stored.hash,'012345');assert.equal(stored.hash.length,64);assert.equal(stored.salt.length,64);
 assert.equal((await call({action:'save_family',entries:[{entry_id:'kid-a',team_code:'KANAB-HS',child_name:'Sample A',created:now}]},a.cookie)).status,200);
 const b=await call({...await challenge('b@example.test'),pin:'654321'});assert.equal(b.status,200);
-assert.equal((await call({action:'save_family',entries:[{entry_id:'kid-b',team_code:'TEAM-D',child_name:'Sample B',created:now}]},b.cookie)).status,200);
+assert.equal((await call({action:'save_family',entries:[{entry_id:'kid-b',team_code:'KS-FICTIONAL',child_name:'Sample B',created:now}]},b.cookie)).status,200);
 const newDevice=await call({action:'login_pin',email:'A@EXAMPLE.TEST',pin:'012345'},'','https://kanabsports.com',{SPORTS_DB:db});assert.equal(newDevice.status,200);
 let family=await call(undefined,newDevice.cookie);assert.equal(family.data.account.email,'a@example.test');assert.deepEqual(family.data.family.map(x=>x.child_name),['Sample A']);assert.deepEqual((await call(undefined,b.cookie)).data.family.map(x=>x.child_name),['Sample B']);
 const incorrect=await call({action:'login_pin',email:'a@example.test',pin:'999999'}),missing=await call({action:'login_pin',email:'missing@example.test',pin:'999999'});assert.equal(incorrect.status,403);assert.deepEqual(incorrect.data,missing.data);

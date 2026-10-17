@@ -25,7 +25,7 @@ sql.prepare("INSERT INTO admin_sessions(id,email,token_hash,expires_at) VALUES('
 sql.prepare("INSERT INTO guardian_memberships VALUES('member','parent@example.test','KS-TEST','private-student','Fall',?,'approved','owner','synthetic',?)").run(Date.now()+86400000,Date.now());
 sql.exec("CREATE TABLE parent_family(email TEXT,entry_id TEXT,team_code TEXT); INSERT INTO parent_family VALUES('parent@example.test','entry','KS-TEST')");
 const cc='ks_coach='+coachToken,pc='__Host-ks_parent='+parentToken,ac='ks_admin='+adminToken;
-const original=globalThis.fetch;let sent=[];globalThis.fetch=async(url,options)=>{assert.match(url,/api.resend.com/);sent.push(JSON.parse(options.body));return Response.json({id:'mock-email'})};
+const original=globalThis.fetch;let sent=[];globalThis.fetch=async(url,options)=>{assert.match(url,/api.resend.com/);sent.push(options.body?JSON.parse(options.body):{});return Response.json({id:'mock-email'})};
 try{
  assert.equal((await call(metrics,'/api/pilot-tracking')).status,401);
  let r=await call(metrics,'/api/pilot-tracking',null,ac);assert.equal(r.status,200);assert.equal((await r.json()).activeFamilies,null);
@@ -46,7 +46,7 @@ try{
  assert.equal((await call(events,'/api/coach-events',change,cc)).status,200);assert.equal(sql.prepare('SELECT COUNT(*) n FROM coach_team_messages').get().n,1);
  r=await call(team,'/api/team-connection?code=KS-TEST',null,pc);let family=(await r.json()).team;assert.equal(family.events[0].detail,'North field');assert.equal(family.messages[0].acknowledged,false);assert(Number.isFinite(family.messages[0].created));
  await call(drivers,'/api/family-drivers',{action:'save',team_code:'KS-TEST',event_id:change.event_id,driver_name:'Driver',driver_email:'driver@example.test'},pc);
- r=await call(drivers,'/api/family-drivers',{action:'remind',team_code:'KS-TEST',event_id:change.event_id},pc);assert.equal(r.status,200);const driverUrl=sent[0].text.match(/https:\/\/[^\s]+/)[0];
+ r=await call(drivers,'/api/family-drivers',{action:'remind',team_code:'KS-TEST',event_id:change.event_id,event_revision:family.events[0].revision},pc);assert.equal(r.status,200);const driverUrl=sent[0].text.match(/https:\/\/[^\s]+/)[0];
  r=await call(calendarAccess,'/api/family-calendar-access',{action:'create',codes:['KS-TEST']},pc);const calendarUrl=(await r.json()).url;
  change={...change,version:1,change_id:'change-test-two',time:'5:00 PM',endTime:'6:00 PM',detail:'Indoor gym'};
  assert.equal((await call(events,'/api/coach-events',change,cc)).status,200);assert.equal((await call(events,'/api/coach-events',{...change,change_id:'stale-change-id'},cc)).status,409);
@@ -66,6 +66,13 @@ try{
  assert.equal((await call(events,'/api/coach-events',{...change,version:2,change_id:'change-test-three',cancelled:true},cc)).status,200);
  r=await driverView({env,request:new Request(driverUrl)});assert((await r.text()).includes('The schedule has changed'));
  r=await call(team,'/api/team-connection?code=KS-TEST',null,pc);assert.equal((await r.json()).team.events.length,0);
+ // The live practice workflow must invalidate queued reminders, too.
+ let scheduledPractice={...change,event_id:'practice-reminder-test',change_id:'change-queued-one',version:0,cancelled:false};
+ assert.equal((await call(events,'/api/coach-events',scheduledPractice,cc)).status,200);
+ assert.equal((await call(drivers,'/api/family-drivers',{action:'save',team_code:'KS-TEST',event_id:scheduledPractice.event_id,driver_name:'Driver',driver_email:'driver@example.test'},pc)).status,200);
+ assert.equal((await call(drivers,'/api/family-drivers',{action:'remind',team_code:'KS-TEST',event_id:scheduledPractice.event_id,event_revision:1,remind_at:new Date(Date.now()+3600000).toISOString()},pc)).status,200);
+ assert.equal((await call(events,'/api/coach-events',{...scheduledPractice,version:1,change_id:'change-queued-two',detail:'New field'},cc)).status,200);
+ const preserved=sql.prepare('SELECT * FROM family_driver_plans WHERE event_id=?').get(scheduledPractice.event_id);assert.equal(preserved.status,'cancelled');assert.equal(preserved.review_required,1);assert.equal(preserved.driver_email,'driver@example.test');
  sql.prepare("UPDATE guardian_memberships SET status='revoked'").run();assert.equal((await call(ack,'/api/family-message-receipts',{team_code:'KS-TEST',message_id:'change-test-two'},pc)).status,403);
  console.log('PASS complete rec pilot: practice creation/change/cancel, atomic announcement, retry deduplication, stale edit rejection, family and calendar updates, current driver link, per-update acknowledgment, authorization, activity deduplication, cost/time log validation, reversible corrections and renewal history. All delivery mocked.');
 }finally{globalThis.fetch=original;sql.close()}

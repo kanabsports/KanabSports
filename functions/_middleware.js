@@ -5,7 +5,7 @@ export async function onRequest(context) {
   if(url0.hostname==='kanabsports.com'&&context.env.SPORTS_DB){
     try{cleanupRows=(await removeBullsharksTest(context.env.SPORTS_DB,context.env))?.deleted_rows??null}catch(error){console.error('Approved test cleanup failed',error?.message)}
   }
-  if(['/team-d/','/team-d','/britt/','/britt','/britt.html','/jodi/','/jodi','/jodi.html','/amber/','/amber'].includes(url0.pathname))return Response.redirect(new URL('/coaches',url0.origin),301);
+  if(['/britt/','/britt','/britt.html','/jodi/','/jodi','/jodi.html','/amber/','/amber'].includes(url0.pathname))return Response.redirect(new URL('/coaches',url0.origin),301);
   if(['/admin','/admin/','/admin.html','/business','/business.html','/owner-sw.js','/owner.webmanifest','/assets/owner-push.js','/assets/coach-push.js','/assets/family-push.js','/assets/notification-panel.js'].includes(url0.pathname)){
     const response=await context.next();
     const headers=new Headers(response.headers);

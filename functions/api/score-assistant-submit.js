@@ -122,14 +122,6 @@ async function addAuditColumns(db){for(const q of [
 ])try{await db.prepare(q).run()}catch{}}
 async function twilioConfig(db,env){
   let account=String(env.TWILIO_ACCOUNT_SID||''),service=String(env.TWILIO_MESSAGING_SERVICE_SID||''),token=String(env.TWILIO_AUTH_TOKEN||'');
-  if((!account||!service)&&db){
-    try{
-      const rows=(await db.prepare("SELECT key,value FROM team_d_settings WHERE key IN ('twilio_account_sid','twilio_service_sid')").all()).results||[];
-      const values=Object.fromEntries(rows.map(r=>[r.key,r.value]));
-      account=account||String(values.twilio_account_sid||'');
-      service=service||String(values.twilio_service_sid||'');
-    }catch{}
-  }
   return {account,service,token,configured:!!(token&&/^AC[a-f0-9]{32}$/i.test(account)&&/^MG[a-f0-9]{32}$/i.test(service))};
 }
 async function sendSms(cfg,to,body){

@@ -1,0 +1,4 @@
+export const CATEGORIES=['general','schedule','logistics','stats','urgent'];
+export async function preferencesSchema(db){await db.prepare(`CREATE TABLE IF NOT EXISTS notification_preferences(role TEXT NOT NULL,identity TEXT NOT NULL,category TEXT NOT NULL,email_muted INTEGER NOT NULL DEFAULT 0,push_muted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(role,identity,category))`).run();}
+export async function preferences(db,role,id){await preferencesSchema(db);const rows=(await db.prepare('SELECT category,email_muted,push_muted FROM notification_preferences WHERE role=? AND identity=?').bind(role,id).all()).results||[];return CATEGORIES.map(category=>({category,email_muted:false,push_muted:false,...rows.find(x=>x.category===category)}));}
+export async function allowedChannels(db,role,id,category){const row=(await preferences(db,role,id)).find(r=>r.category===category)||{};return {email:!row.email_muted,push:!row.push_muted};}

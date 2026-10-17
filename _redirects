@@ -3,8 +3,6 @@
 /team.html /family/ 301
 /team /family/ 301
 /team/ /family/ 301
-/team-d /coaches 301
-/team-d/ /coaches 301
 /britt /coaches 301
 /britt/ /coaches 301
 /britt.html /coaches 301
@@ -14,3 +12,4 @@
 /amber/ /coaches 301
 /score-assistant /score-assistant/index.html 200
 /score-assistant/ /score-assistant/index.html 200
+/messages /messages/ 301
