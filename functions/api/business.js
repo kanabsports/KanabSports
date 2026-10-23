@@ -4,38 +4,53 @@ export async function onRequestGet({request,env}){
   if(!env.SPORTS_DB)return json({error:'Database unavailable.'},503);
   const session=await authenticate(request,env.SPORTS_DB);if(!session)return json({error:'Unauthorized.'},401);
   await schema(env.SPORTS_DB);await seedStartingLedger(env.SPORTS_DB);await seedAlways(env.SPORTS_DB);
-  const [transactions,sponsors,mileage]=await Promise.all([
+  const [transactions,sponsors,mileage,categories]=await Promise.all([
     env.SPORTS_DB.prepare(`SELECT id,type,date,amount,category,vendor,description,source,created_at FROM business_transactions ORDER BY date DESC,created_at DESC`).all(),
     env.SPORTS_DB.prepare(`SELECT id,name,contact_email,amount,frequency,status,next_due,notes,created_at,updated_at FROM business_sponsors ORDER BY name`).all(),
-    env.SPORTS_DB.prepare(`SELECT id,date,starting_point,destination,purpose,miles,notes,created_at FROM business_mileage ORDER BY date DESC,created_at DESC`).all()
+    env.SPORTS_DB.prepare(`SELECT id,date,starting_point,destination,purpose,miles,notes,created_at FROM business_mileage ORDER BY date DESC,created_at DESC`).all(),
+    env.SPORTS_DB.prepare(`SELECT name FROM business_categories ORDER BY name COLLATE NOCASE`).all()
   ]);
-  return json({transactions:transactions.results||[],sponsors:sponsors.results||[],mileage:mileage.results||[]});
+  return json({categories:(categories.results||[]).map(x=>x.name),transactions:transactions.results||[],sponsors:sponsors.results||[],mileage:mileage.results||[]});
 }
 
 export async function onRequestPost({request,env}){
   if(!env.SPORTS_DB)return json({error:'Database unavailable.'},503);
   const session=await authenticate(request,env.SPORTS_DB);if(!session)return json({error:'Unauthorized.'},401);
-  await schema(env.SPORTS_DB);await seedStartingLedger(env.SPORTS_DB);
+  await schema(env.SPORTS_DB);await seedStartingLedger(env.SPORTS_DB);await seedAlways(env.SPORTS_DB);
   try{
     const body=await request.json(),action=clean(body.action,30),type=clean(body.type,30);
-    if(action!=='add')return json({error:'Unsupported action.'},400);
+    if(!['add','update'].includes(action))return json({error:'Unsupported action.'},400);
+    const editing=action==='update',entryId=clean(body.id,100);
+    if(editing){
+      const table=type==='mileage'?'business_mileage':type==='sponsor'?'business_sponsors':['expense','income'].includes(type)?'business_transactions':null;
+      if(!table||!entryId)return json({error:'A valid entry is required.'},400);
+      const existing=await env.SPORTS_DB.prepare(`SELECT * FROM ${table} WHERE id=?`).bind(entryId).first();
+      if(!existing||(table==='business_transactions'&&existing.type!==type))return json({error:'Entry not found. Reload the ledger and try again.'},404);
+    }
     if(type==='expense'||type==='income'){
       const amount=number(body.amount);if(!Number.isFinite(Number(body.amount))||amount<=0)return json({error:'Enter an amount greater than zero.'},400);
-      const id=crypto.randomUUID(),date=cleanDate(body.date),category=clean(body.category,120),vendor=clean(body.vendor,160),description=clean(body.description,300);
+      const id=editing?entryId:crypto.randomUUID(),date=cleanDate(body.date),category=clean(body.category,120),vendor=clean(body.vendor,160),description=clean(body.description,300);
       if(!date)return json({error:'Date is required.'},400);
-      await env.SPORTS_DB.prepare(`INSERT INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES (?,?,?,?,?,?,?,'manual',datetime('now'))`).bind(id,type,date,amount,category,vendor,description).run();
+      const save=editing
+        ?env.SPORTS_DB.prepare(`UPDATE business_transactions SET date=?,amount=?,category=?,vendor=?,description=? WHERE id=? AND type=?`).bind(date,amount,category,vendor,description,id,type)
+        :env.SPORTS_DB.prepare(`INSERT INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES (?,?,?,?,?,?,?,'manual',datetime('now'))`).bind(id,type,date,amount,category,vendor,description);
+      const statements=[save];if(category)statements.push(env.SPORTS_DB.prepare(`INSERT OR IGNORE INTO business_categories (name) VALUES (?)`).bind(category));
+      await env.SPORTS_DB.batch(statements);
       return json({success:true,id});
     }
     if(type==='mileage'){
-      const id=crypto.randomUUID(),date=cleanDate(body.date),miles=number(body.miles),purpose=clean(body.purpose||body.description,240);
-      if(!date||miles<=0)return json({error:'Date and miles are required.'},400);
-      await env.SPORTS_DB.prepare(`INSERT INTO business_mileage (id,date,starting_point,destination,purpose,miles,notes,created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))`).bind(id,date,clean(body.starting_point,160),clean(body.destination,160),purpose,miles,clean(body.notes,400)).run();
+      const id=editing?entryId:crypto.randomUUID(),date=cleanDate(body.date),miles=number(body.miles),purpose=clean(body.purpose||body.description,240);
+      if(!date||!Number.isFinite(Number(body.miles))||miles<=0)return json({error:'Date and miles are required.'},400);
+      if(editing)await env.SPORTS_DB.prepare(`UPDATE business_mileage SET date=?,starting_point=?,destination=?,purpose=?,miles=? WHERE id=?`).bind(date,clean(body.starting_point,160),clean(body.destination,160),purpose,miles,id).run();
+      else await env.SPORTS_DB.prepare(`INSERT INTO business_mileage (id,date,starting_point,destination,purpose,miles,notes,created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))`).bind(id,date,clean(body.starting_point,160),clean(body.destination,160),purpose,miles,clean(body.notes,400)).run();
       return json({success:true,id});
     }
     if(type==='sponsor'){
-      const id=crypto.randomUUID(),name=clean(body.vendor||body.description,180),amount=number(body.amount),frequency=choice(body.frequency,['Monthly','Quarterly','Annual'],'Annual'),status=choice(body.status,['Due','Paid','Overdue'],'Due'),nextDue=cleanDate(body.next_due,true),email=cleanEmail(body.contact_email);
+      const id=editing?entryId:crypto.randomUUID(),name=clean(body.vendor||body.description,180),amount=number(body.amount),frequency=choice(body.frequency,['Monthly','Quarterly','Annual'],'Annual'),status=choice(body.status,['Due','Paid','Overdue'],'Due'),nextDue=cleanDate(body.next_due,true),email=cleanEmail(body.contact_email);
+      if(!Number.isFinite(Number(body.amount))||Number(body.amount)<0)return json({error:'Enter a valid sponsor amount.'},400);
       if(!name)return json({error:'Sponsor name is required.'},400);
-      await env.SPORTS_DB.prepare(`INSERT INTO business_sponsors (id,name,contact_email,amount,frequency,status,next_due,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`).bind(id,name,email,amount,frequency,status,nextDue,clean(body.notes,500)).run();
+      if(editing)await env.SPORTS_DB.prepare(`UPDATE business_sponsors SET name=?,contact_email=?,amount=?,frequency=?,status=?,next_due=?,updated_at=datetime('now') WHERE id=?`).bind(name,email,amount,frequency,status,nextDue,id).run();
+      else await env.SPORTS_DB.prepare(`INSERT INTO business_sponsors (id,name,contact_email,amount,frequency,status,next_due,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`).bind(id,name,email,amount,frequency,status,nextDue,clean(body.notes,500)).run();
       return json({success:true,id});
     }
     return json({error:'Unknown entry type.'},400);
@@ -43,20 +58,25 @@ export async function onRequestPost({request,env}){
 }
 
 async function schema(db){
+  await db.prepare(`CREATE TABLE IF NOT EXISTS business_categories (name TEXT PRIMARY KEY COLLATE NOCASE)`).run();
   await db.prepare(`CREATE TABLE IF NOT EXISTS business_transactions (id TEXT PRIMARY KEY,type TEXT NOT NULL,date TEXT NOT NULL,amount REAL NOT NULL DEFAULT 0,category TEXT,vendor TEXT,description TEXT,source TEXT NOT NULL DEFAULT 'manual',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
   await db.prepare(`CREATE TABLE IF NOT EXISTS business_sponsors (id TEXT PRIMARY KEY,name TEXT NOT NULL,contact_email TEXT,amount REAL NOT NULL DEFAULT 0,frequency TEXT NOT NULL DEFAULT 'Annual',status TEXT NOT NULL DEFAULT 'Due',next_due TEXT,notes TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
   await db.prepare(`CREATE TABLE IF NOT EXISTS business_mileage (id TEXT PRIMARY KEY,date TEXT NOT NULL,starting_point TEXT,destination TEXT,purpose TEXT NOT NULL,miles REAL NOT NULL DEFAULT 0,notes TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();
+  await db.prepare(`INSERT OR IGNORE INTO business_categories (name) SELECT DISTINCT TRIM(category) FROM business_transactions WHERE TRIM(COALESCE(category,''))<>''`).run();
 }
 
 async function seedAlways(db){
+  // Remember this one-time import so editing a matched manual entry cannot recreate it.
+  await db.prepare(`CREATE TABLE IF NOT EXISTS business_migrations (id TEXT PRIMARY KEY)`).run();
+  if(await db.prepare(`SELECT id FROM business_migrations WHERE id='invideo-starting-ledger'`).first())return;
   // Match existing manual entries as well as the stable seed ID. Atomic statement
   // prevents duplicate insertion when two owner tabs load simultaneously.
-  await db.prepare(`INSERT OR IGNORE INTO business_transactions
+  await db.batch([db.prepare(`INSERT OR IGNORE INTO business_transactions
     (id,type,date,amount,category,vendor,description,source,created_at)
     SELECT 'seed-invideo','expense','2026-10-06',20.21,'Software','Invideo','Video creation software','starting-ledger',datetime('now')
     WHERE NOT EXISTS (SELECT 1 FROM business_transactions
       WHERE type='expense' AND date='2026-10-06' AND ROUND(amount,2)=20.21
-      AND (LOWER(TRIM(vendor)) IN ('invideo','@invideo','invideo ai') OR LOWER(description) LIKE '%invideo%'))`).run();
+      AND (LOWER(TRIM(vendor)) IN ('invideo','@invideo','invideo ai') OR LOWER(description) LIKE '%invideo%'))`),db.prepare(`INSERT OR IGNORE INTO business_migrations (id) VALUES ('invideo-starting-ledger')`)]);
 }
 
 async function seedStartingLedger(db){
