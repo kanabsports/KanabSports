@@ -1,14 +1,10 @@
+import {kanabDate} from '../../assets/event-dates.mjs';
 export async function onRequestGet(context){
   const{env}=context;
   if(!env.SPORTS_DB)return json({events:[]});
   try{
     await ensureSchema(env.SPORTS_DB);
-
-    await env.SPORTS_DB.prepare(`
-      DELETE FROM coach_submissions
-      WHERE type='Event'
-        AND (opponent='Halloween 5K' OR opponent='K-Town Cornhole Throwdown')
-    `).run();
+    const today=kanabDate();
 
     const q=await env.SPORTS_DB.prepare(`
       SELECT
@@ -18,20 +14,20 @@ export async function onRequestGet(context){
           WHEN COALESCE(featured,0)=1
            AND event_date IS NOT NULL
            AND event_date!=''
-           AND date(event_date) BETWEEN date('now') AND date('now','+7 days')
+           AND date(event_date) BETWEEN date(?) AND date(?,'+7 days')
           THEN 1 ELSE 0
         END AS feature_active
       FROM coach_submissions
       WHERE status='approved'
         AND type='Event'
-        AND (event_date IS NULL OR event_date='' OR date(event_date)>=date('now'))
+        AND (event_date IS NULL OR event_date='' OR date(event_date)>=date(?))
       ORDER BY
         feature_active DESC,
         CASE WHEN event_date IS NULL OR event_date='' THEN 1 ELSE 0 END ASC,
         date(event_date) ASC,
         datetime(published_at) ASC
       LIMIT 20
-    `).all();
+    `).bind(today,today,today).all();
 
     return json({events:(q.results||[]).map(r=>({
       id:r.id,
