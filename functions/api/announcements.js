@@ -1,9 +1,10 @@
+import {kanabDate} from '../../assets/event-dates.mjs';
 export async function onRequestGet({env}){
   if(!env.SPORTS_DB)return json({announcements:[]});
   try{
     await schema(env.SPORTS_DB);
-    const rows=await env.SPORTS_DB.prepare(`SELECT id,title,detail,sport,event_date,end_date,href,featured,published_at FROM site_announcements WHERE status='approved' AND (end_date IS NULL OR date(end_date)>=date('now','-1 day')) ORDER BY featured DESC,date(event_date),published_at DESC LIMIT 30`).all();
-    return json({announcements:(rows.results||[]).map(row=>({id:row.id,title:row.title,detail:row.detail,sport:row.sport,date:row.event_date,end:row.end_date,href:row.href||'#registration',type:'Kanab Recreation',featured:Boolean(row.featured),publishedAt:row.published_at}))},{'Cache-Control':'public, max-age=30, s-maxage=60'});
+    const rows=await env.SPORTS_DB.prepare(`SELECT id,title,detail,sport,event_date,end_date,href,featured,published_at FROM site_announcements WHERE status='approved' AND (COALESCE(NULLIF(end_date,''),NULLIF(event_date,'')) IS NULL OR date(COALESCE(NULLIF(end_date,''),event_date))>=?) ORDER BY featured DESC,date(event_date),published_at DESC LIMIT 30`).bind(kanabDate()).all();
+    return json({announcements:(rows.results||[]).map(row=>({id:row.id,title:row.title,detail:row.detail,sport:row.sport,date:row.event_date,end:row.end_date,href:row.href||'#registration',type:'Kanab Recreation',featured:Boolean(row.featured),publishedAt:row.published_at}))},{'Cache-Control':'no-store'});
   }catch(error){console.error('announcement read error',error);return json({announcements:[]});}
 }
 

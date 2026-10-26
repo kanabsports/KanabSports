@@ -9,7 +9,18 @@
 /sterling-preview.html
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
   Cache-Control: no-store
-/\n+  Cache-Control: no-store\n+\n+/index.html\n+  Cache-Control: no-store\n+\n+/homecoming/\n+  Cache-Control: no-store\n+\n+/homecoming/celebration.js\n+  Cache-Control: no-store\n+\n /sterling
+/
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-store
+
+/homecoming/
+  Cache-Control: no-store
+
+/homecoming/celebration.js
+  Cache-Control: no-store
+
 
 /admin
   Cache-Control: private, no-store, max-age=0
