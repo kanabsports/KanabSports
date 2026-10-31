@@ -1,0 +1,36 @@
+name: Render verified win graphics
+on:
+  push:
+    branches: [win-watch-social]
+    paths: ['social/games.json', 'social/render.py', '.github/workflows/win-watch-social.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: win-watch-card-render
+  cancel-in-progress: false
+jobs:
+  render:
+    if: github.ref == 'refs/heads/win-watch-social'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: win-watch-social
+          fetch-depth: 0
+      - name: Install renderer
+        run: sudo apt-get update -qq && sudo apt-get install -y python3-pil fonts-dejavu-core
+      - name: Render and publish missing cards
+        run: |
+          set -eu
+          /usr/bin/python3 social/render.py
+          git add -- social/cards/
+          if git diff --cached --quiet; then exit 0; fi
+          git -c user.name="Kanab Win Watch" -c user.email="howdy@kanabsports.com" commit -m "Render verified win graphics"
+          for delay in 1 2 4; do
+            git pull --rebase origin win-watch-social
+            if git push origin HEAD:refs/heads/win-watch-social; then exit 0; fi
+            sleep "$delay"
+          done
+          exit 1
