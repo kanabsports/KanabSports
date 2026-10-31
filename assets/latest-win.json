@@ -1,13 +1,12 @@
 {
-  "id": "volleyball-2026-10-24-beaver",
-  "sport": "Volleyball",
-  "team": "Cowgirls",
-  "opponent": "Beaver",
-  "teamScore": 2,
-  "opponentScore": 0,
-  "date": "2026-10-24",
-  "publishedAt": "2026-10-24T10:51:06-06:00",
-  "level": "state",
-  "maxprepsUrl": "https://www.maxpreps.com/ut/volleyball/match/beaver-vs-kanab/10-24-2026/?c=1ada49eb-979f-4b7b-aa35-25a215eda6f4",
-  "hudlUrl": "https://fan.hudl.com/usa/ut/kanab/organization/15658/kanab-high-school/team/690580/girls-varsity-volleyball"
+  "id": "football-2026-10-30-gunnison-valley",
+  "sport": "Football",
+  "team": "Cowboys",
+  "opponent": "Gunnison Valley",
+  "teamScore": 20,
+  "opponentScore": 8,
+  "date": "2026-10-30",
+  "publishedAt": "2026-10-31T02:37:10Z",
+  "level": "win",
+  "maxprepsUrl": "https://www.maxpreps.com/ut/football/game/gunnison-valley-vs-kanab/10-30-2026/?c=ebf18da6-f281-4ba2-835f-41f4d6ef1ff2"
 }
