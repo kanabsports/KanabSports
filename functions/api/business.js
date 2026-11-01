@@ -29,13 +29,15 @@ export async function onRequestPost({request,env}){
     }
     if(type==='expense'||type==='income'){
       const magnitude=number(body.amount),amount=body.refund==='yes'?-magnitude:magnitude;if(!Number.isFinite(Number(body.amount))||magnitude<=0)return json({error:'Enter an amount greater than zero.'},400);
-      const id=editing?entryId:crypto.randomUUID(),date=cleanDate(body.date),category=clean(body.category,120),vendor=clean(body.vendor,160),description=clean(body.description,300);
+      const key=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.requestId||'')?body.requestId:null;
+      const id=editing?entryId:key||crypto.randomUUID(),date=cleanDate(body.date),category=clean(body.category,120),vendor=clean(body.vendor,160),description=clean(body.description,300);
       if(!date)return json({error:'Date is required.'},400);
       const save=editing
         ?env.SPORTS_DB.prepare(`UPDATE business_transactions SET date=?,amount=?,category=?,vendor=?,description=? WHERE id=? AND type=?`).bind(date,amount,category,vendor,description,id,type)
-        :env.SPORTS_DB.prepare(`INSERT INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES (?,?,?,?,?,?,?,'manual',datetime('now'))`).bind(id,type,date,amount,category,vendor,description);
+        :env.SPORTS_DB.prepare(`INSERT INTO business_transactions (id,type,date,amount,category,vendor,description,source,created_at) VALUES (?,?,?,?,?,?,?,'manual',datetime('now')) ON CONFLICT(id) DO NOTHING`).bind(id,type,date,amount,category,vendor,description);
       const statements=[save];if(category)statements.push(env.SPORTS_DB.prepare(`INSERT OR IGNORE INTO business_categories (name) VALUES (?)`).bind(category));
       await env.SPORTS_DB.batch(statements);
+      if(key&&!editing){const row=await env.SPORTS_DB.prepare('SELECT * FROM business_transactions WHERE id=?').bind(id).first();if(!row||Object.entries({type,date,amount,category,vendor,description}).some(([k,v])=>row[k]!==v))return json({error:'An earlier version of this entry was already saved. Check the ledger before editing it.'},409)}
       return json({success:true,id});
     }
     if(type==='mileage'){

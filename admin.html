@@ -59,7 +59,7 @@ function categoryOptions(selected=''){
 }
 function toggleNewCategory(){const form=$('businessEntry'),visible=form.elements.category.value==='__new_category__'&&['income','expense'].includes(form.elements.type.value);$('newCategoryLabel').hidden=!visible;form.elements.new_category.required=visible;form.elements.new_category.disabled=!visible;if(visible)form.elements.new_category.focus()}
 function openBusinessEntry(type,entry=null){
- const form=$('businessEntry');form.reset();form.elements.type.value=type;form.elements.id.value=entry?.id||'';
+ const form=$('businessEntry');form.reset();form.dataset.requestId=crypto.randomUUID();form.elements.type.value=type;form.elements.id.value=entry?.id||'';
  const now=new Date();form.elements.date.value=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
  $('entryTitle').textContent=(entry?'Edit ':'Add ')+type[0].toUpperCase()+type.slice(1);$('entryStatus').textContent='';$('saveBusiness').textContent=entry?'Save changes':'Save entry';
  form.querySelectorAll('[data-money]').forEach(x=>x.classList.toggle('hidden',type==='mileage'));
@@ -83,7 +83,9 @@ $('businessEntry').onsubmit=async e=>{
  if(body.category==='__new_category__'){body.category=(body.new_category||'').trim();if(!body.category){$('entryStatus').textContent='Enter a category name.';return}}delete body.new_category;
  if(body.type==='mileage'){delete body.amount;delete body.category;delete body.vendor}else{delete body.miles;delete body.starting_point;delete body.destination}
  $('saveBusiness').disabled=true;$('entryStatus').textContent='Saving…';
- try{const r=await fetch('/api/business',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();if(!r.ok||!d.success)throw new Error(d.error||'Unable to save.');$('entryDialog').close();await loadBusiness()}
+ try{const transaction=['income','expense'].includes(body.type);if(transaction)body.requestId=e.target.dataset.requestId;
+ const send=()=>fetch('/api/business',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ let r;try{r=await send()}catch(error){if(!transaction)throw error;await new Promise(resolve=>setTimeout(resolve,800));try{r=await send()}catch{throw new Error('Connection interrupted. Keep this form open and tap Save entry again when connected.')}}const d=await r.json().catch(()=>({}));if(!r.ok||!d.success)throw new Error(r.status===401?'Owner sign-in expired. Sign in again to save.':d.error||'Could not confirm the save. Please try again.');$('entryDialog').close();await loadBusiness()}
  catch(e){$('entryStatus').textContent=e.message}finally{$('saveBusiness').disabled=false}
 };
 $('exportLedger').onclick=()=>{if(!businessData)return;const h=['date','type','vendor','category','description','amount'],rows=[h,...businessData.transactions.map(x=>h.map(k=>x[k]??''))];const csv=rows.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})),a=document.createElement('a');a.href=url;a.download='kanab-sports-ledger.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
