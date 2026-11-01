@@ -1107,3 +1107,7 @@ p {
     transition: none;
   }
 }
+
+/* Soft Monday branded destination, ahead of DNS cutover. */
+.domain-note {margin:12px 0 0;font-size:12px;color:#526e58;line-height:1.5}
+.domain-note a {font-weight:800;text-underline-offset:3px}
