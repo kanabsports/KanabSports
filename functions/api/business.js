@@ -28,7 +28,7 @@ export async function onRequestPost({request,env}){
       if(!existing||(table==='business_transactions'&&existing.type!==type))return json({error:'Entry not found. Reload the ledger and try again.'},404);
     }
     if(type==='expense'||type==='income'){
-      const amount=number(body.amount);if(!Number.isFinite(Number(body.amount))||amount<=0)return json({error:'Enter an amount greater than zero.'},400);
+      const magnitude=number(body.amount),amount=body.refund==='yes'?-magnitude:magnitude;if(!Number.isFinite(Number(body.amount))||magnitude<=0)return json({error:'Enter an amount greater than zero.'},400);
       const id=editing?entryId:crypto.randomUUID(),date=cleanDate(body.date),category=clean(body.category,120),vendor=clean(body.vendor,160),description=clean(body.description,300);
       if(!date)return json({error:'Date is required.'},400);
       const save=editing
