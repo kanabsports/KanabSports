@@ -1,5 +1,8 @@
 name: Kanab Sports checks
 on:
+  push:
+    branches: [main]
+    paths: [family/**, functions/**, coach-register.html, manifest.webmanifest, assets/ks-home-*.png]
   pull_request:
     paths:
       - 'family/**'
@@ -29,3 +32,25 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/pep-browser" playwright-core@1.55.0
           python3 -m http.server 8080 > "$RUNNER_TEMP/pep-server.log" 2>&1 &
           NODE_PATH="$RUNNER_TEMP/pep-browser/node_modules" node tools/family-layout-check.cjs
+
+  live:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify deployed public pages and icons without submitting data
+        run: |
+          for i in $(seq 1 20); do
+            url="https://kanabsports.com"
+            tag="?build=$GITHUB_SHA-$i"
+            if curl -fsSL --max-time 10 "$url/family/$tag" -o /tmp/family && grep -q 'class="family-links"' /tmp/family &&
+               curl -fsSL --max-time 10 "$url/coach-register$tag" -o /tmp/signup && grep -q 'data.inviteSetup' /tmp/signup &&
+               curl -fsSL --max-time 10 "$url/assets/ks-home-512.png$tag" -o /tmp/icon && cmp -s /tmp/icon assets/ks-home-512.png; then
+              echo "Verified production family layout, installed icon and invitation signup UI"; exit 0
+            fi
+            sleep 6
+          done
+          exit 1
