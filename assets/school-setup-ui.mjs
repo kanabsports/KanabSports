@@ -6,7 +6,7 @@ $('assignTeam').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disa
 $('athleteEnrollment').onsubmit=async e=>{
  e.preventDefault();const button=e.submitter,form=e.currentTarget;
  const data=Object.fromEntries(new FormData(form));button.disabled=true;
- try{await api('/api/school-admin',{...data,action:button.value,confirmed:true,verified_teen:form.elements.verified_teen.checked});$('athleteStatus').textContent=button.value==='enroll_athlete'?'Shared Pep Talks enabled for this family.':'Access withdrawn.';form.reset();}
+ try{await api('/api/school-admin',{...data,action:button.value,confirmed:true,verified_teen:form.elements.verified_teen.checked});$('athleteStatus').textContent=button.value==='enroll_athlete'?'Enrollment prepared. The guardian can turn on athlete access in My Family → Kids.':'Access withdrawn.';form.reset();}
  catch(error){$('athleteStatus').textContent=error.message;}finally{button.disabled=false;}
 };
 
