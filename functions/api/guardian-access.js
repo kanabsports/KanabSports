@@ -23,9 +23,9 @@ export async function onRequest({request,env}){
   const parent=await parentSession(request,db);if(!parent)return json({error:'Sign in to My Family to request access.'},401);
   if(!/^[A-Z0-9_-]{1,32}$/.test(code))return json({error:'Invalid team code.'},400);
   const team=await db.prepare("SELECT id FROM coach_access_requests WHERE team_code=? AND status='approved' LIMIT 1").bind(code).first();if(!team)return json({error:'Team not found.'},404);
-  const count=await db.prepare('SELECT COUNT(*) AS n FROM parent_access_requests WHERE email=?').bind(parent.email).first();if(Number(count?.n)>=20)return json({error:'Contact your school to manage additional requests.'},429);
+  const count=await db.prepare('SELECT COUNT(*) AS n FROM parent_access_requests WHERE email=?').bind(parent.email).first();if(Number(count?.n)>=20)return json({error:'Contact your team administrator to manage additional requests.'},429);
   await db.prepare("INSERT OR IGNORE INTO parent_access_requests(email,team_code,status,created) VALUES(?,?,'pending',?)").bind(parent.email,code,Date.now()).run();
-  return json({success:true,message:'Access requested. Your school must verify your guardian relationship before private team information is available.'});
+  return json({success:true,message:'Access requested. Your team administrator will verify your guardian relationship before private team information is available.'});
  }
  if(!owner)return json({error:'Owner admin approval is required.'},403);
  if(body.action==='revoke'){
@@ -35,7 +35,7 @@ export async function onRequest({request,env}){
  if(body.action!=='approve')return json({error:'Unknown action.'},400);
  const policy=await teamPolicy(db,code);if(!policy||policy.kind==='school')return json({error:'School approvals require the School Portal. Assign rec or travel teams in School Setup before approving contacts here.'},403);
  const email=String(body.email||'').trim().toLowerCase(),student=String(body.student_ref||'').trim(),season=String(body.season||'').trim(),evidence=String(body.evidence||'').trim(),expires=Date.parse(body.expires);
- if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!student||student.length>100||!season||season.length>80||evidence.length<10||evidence.length>500||!Number.isFinite(expires)||expires<=Date.now()||expires>Date.now()+366*86400000||!body.confirmed)return json({error:'Provide a guardian email, school student reference, season, school authorization reference and an expiry within one year. Confirm school authorization.'},400);
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||!student||student.length>100||!season||season.length>80||evidence.length<10||evidence.length>500||!Number.isFinite(expires)||expires<=Date.now()||expires>Date.now()+366*86400000||!body.confirmed)return json({error:'Provide a guardian email, Pep player ID, season, program authorization reference and an expiry within one year. Confirm program authorization.'},400);
  const team=await db.prepare("SELECT id FROM coach_access_requests WHERE team_code=? AND status='approved' LIMIT 1").bind(code).first();if(!team)return json({error:'An active coach-created team code is required.'},400);
  const id=crypto.randomUUID(),now=Date.now();
  await db.batch([db.prepare("INSERT INTO guardian_memberships VALUES(?,?,?,?,?,?,'approved',?,?,?)").bind(id,email,code,student,season,expires,owner.email,evidence,now),db.prepare('INSERT INTO guardian_access_audit VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),id,owner.email,'approve',now),db.prepare("UPDATE parent_access_requests SET status='approved' WHERE email=? AND team_code=?").bind(email,code)]);
