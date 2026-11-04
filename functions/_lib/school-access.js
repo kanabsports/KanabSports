@@ -3,6 +3,7 @@ const initialized=new WeakSet();
 export async function schoolSchema(db){
  if(initialized.has(db))return;
  for(const sql of [
+ `CREATE TABLE IF NOT EXISTS coach_team_categories(team_code TEXT PRIMARY KEY,kind TEXT NOT NULL CHECK(kind IN ('rec','school','travel')),coach_id TEXT NOT NULL,revision INTEGER NOT NULL)`,
  `CREATE TABLE IF NOT EXISTS school_orgs(id TEXT PRIMARY KEY,name TEXT NOT NULL,created INTEGER NOT NULL)`,
  `CREATE TABLE IF NOT EXISTS school_staff(id TEXT PRIMARY KEY,school_id TEXT NOT NULL,email TEXT NOT NULL,role TEXT NOT NULL,active INTEGER NOT NULL,granted_by TEXT NOT NULL,parent_grant TEXT,expires INTEGER NOT NULL,evidence TEXT NOT NULL,created INTEGER NOT NULL)`,
  `CREATE INDEX IF NOT EXISTS school_staff_lookup ON school_staff(email,school_id,active)`,

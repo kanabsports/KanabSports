@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
+import {preferencesSchema} from '../functions/_lib/notification-preferences.js';
 import {ensureCoachCore,sha256} from '../functions/_lib/coach-auth.js';
 import {accessSchema} from '../functions/_lib/parent-access.js';
 import {schoolSchema} from '../functions/_lib/school-access.js';
@@ -40,13 +41,15 @@ try{
  assert.equal(saved.status,'active');assert.deepEqual(saved.team_codes,['KS-TEST']);assert.equal(saved.start_date,today);
  assert.equal((await call(metrics,'/api/pilot-tracking',{action:'configure',team_codes:'ks-test',start_date:today,end_date:'2030-12-31',status:'draft'},ac)).status,200);
  saved=(await (await call(metrics,'/api/pilot-tracking',null,ac)).json()).pilot;assert.equal(saved.status,'draft');assert.deepEqual(saved.team_codes,['KS-TEST']);
+ await preferencesSchema(db);sql.exec("INSERT INTO notification_preferences VALUES('parent','parent@example.test','general',1,1)");
  let change={event_id:'practice-test-one',change_id:'change-test-one',version:0,title:'Soccer practice',date:'2030-01-12',time:'4:00 PM',endTime:'5:00 PM',detail:'North field',cancelled:false};
  assert.equal((await call(events,'/api/coach-events',change)).status,401);
  r=await call(events,'/api/coach-events',change,cc);assert.equal(r.status,200,await r.clone().text());
  assert.equal((await call(events,'/api/coach-events',change,cc)).status,200);assert.equal(sql.prepare('SELECT COUNT(*) n FROM coach_team_messages').get().n,1);
+ assert.equal(sent.filter(m=>m.subject==='A team schedule changed in Pep').length,1,'Schedule alert survives general mute and retries');
  r=await call(team,'/api/team-connection?code=KS-TEST',null,pc);let family=(await r.json()).team;assert.equal(family.events[0].detail,'North field');assert.equal(family.messages[0].acknowledged,false);assert(Number.isFinite(family.messages[0].created));
  await call(drivers,'/api/family-drivers',{action:'save',team_code:'KS-TEST',event_id:change.event_id,driver_name:'Driver',driver_email:'driver@example.test'},pc);
- r=await call(drivers,'/api/family-drivers',{action:'remind',team_code:'KS-TEST',event_id:change.event_id,event_revision:family.events[0].revision},pc);assert.equal(r.status,200);const driverUrl=sent[0].text.match(/https:\/\/[^\s]+/)[0];
+ r=await call(drivers,'/api/family-drivers',{action:'remind',team_code:'KS-TEST',event_id:change.event_id,event_revision:family.events[0].revision},pc);assert.equal(r.status,200);const driverUrl=sent.find(x=>x.to.includes('driver@example.test')).text.match(/https:\/\/[^\s]+/)[0];
  r=await call(calendarAccess,'/api/family-calendar-access',{action:'create',codes:['KS-TEST']},pc);const calendarUrl=(await r.json()).url;
  change={...change,version:1,change_id:'change-test-two',time:'5:00 PM',endTime:'6:00 PM',detail:'Indoor gym'};
  assert.equal((await call(events,'/api/coach-events',change,cc)).status,200);assert.equal((await call(events,'/api/coach-events',{...change,change_id:'stale-change-id'},cc)).status,409);
@@ -57,6 +60,9 @@ try{
  assert.equal((await call(ack,'/api/family-message-receipts',{team_code:'OTHER',message_id:'change-test-two'},pc)).status,403);
  await call(ack,'/api/family-message-receipts',{team_code:'KS-TEST',message_id:'change-test-two'},pc);
  r=await call(team,'/api/team-connection?code=KS-TEST',null,pc);family=(await r.json()).team;assert.equal(family.messages.find(m=>m.id==='change-test-two').acknowledged,true);assert.equal(family.messages.find(m=>m.id==='change-test-one').acknowledged,false);
+ const updatedIcs=await (await calendar({env,request:new Request(calendarUrl)})).text();
+ assert.match(updatedIcs,/UID:KS-TEST-practice-test-one@kanabsports.com/);
+ assert.match(updatedIcs,/SEQUENCE:2/);assert.match(updatedIcs,/LOCATION:Indoor gym/);
  const entry={action:'log',id:'entry-test-unique',date:today,kind:'support_minutes',quantity:25,note:'Synthetic workflow verification'};
  assert.equal((await call(metrics,'/api/pilot-tracking',entry,ac)).status,200);await call(metrics,'/api/pilot-tracking',entry,ac);assert.equal(sql.prepare('SELECT COUNT(*) n FROM pep_pilot_entries').get().n,1);
  assert.equal((await call(metrics,'/api/pilot-tracking',{...entry,quantity:-1},ac)).status,400);assert.equal((await call(metrics,'/api/pilot-tracking',{...entry,quantity:26},ac)).status,409);
@@ -67,11 +73,16 @@ try{
  r=await driverView({env,request:new Request(driverUrl)});assert((await r.text()).includes('The schedule has changed'));
  r=await call(team,'/api/team-connection?code=KS-TEST',null,pc);assert.equal((await r.json()).team.events.length,0);
  // The live practice workflow must invalidate queued reminders, too.
+ const cancelledIcs=await (await calendar({env,request:new Request(calendarUrl)})).text();
+ assert.match(cancelledIcs,/UID:KS-TEST-practice-test-one@kanabsports.com/);assert.match(cancelledIcs,/SEQUENCE:3/);assert.match(cancelledIcs,/STATUS:CANCELLED/);
+ sql.exec("INSERT INTO notification_preferences VALUES('parent','parent@example.test','schedule',1,1)");
+ const priorNotices=sent.filter(m=>m.subject==='A team schedule changed in Pep').length;
  let scheduledPractice={...change,event_id:'practice-reminder-test',change_id:'change-queued-one',version:0,cancelled:false};
  assert.equal((await call(events,'/api/coach-events',scheduledPractice,cc)).status,200);
  assert.equal((await call(drivers,'/api/family-drivers',{action:'save',team_code:'KS-TEST',event_id:scheduledPractice.event_id,driver_name:'Driver',driver_email:'driver@example.test'},pc)).status,200);
  assert.equal((await call(drivers,'/api/family-drivers',{action:'remind',team_code:'KS-TEST',event_id:scheduledPractice.event_id,event_revision:1,remind_at:new Date(Date.now()+3600000).toISOString()},pc)).status,200);
  assert.equal((await call(events,'/api/coach-events',{...scheduledPractice,version:1,change_id:'change-queued-two',detail:'New field'},cc)).status,200);
+ assert.equal(sent.filter(m=>m.subject==='A team schedule changed in Pep').length,priorNotices,'Schedule mute suppresses practice notices without hiding schedule edits');
  const preserved=sql.prepare('SELECT * FROM family_driver_plans WHERE event_id=?').get(scheduledPractice.event_id);assert.equal(preserved.status,'cancelled');assert.equal(preserved.review_required,1);assert.equal(preserved.driver_email,'driver@example.test');
  sql.prepare("UPDATE guardian_memberships SET status='revoked'").run();assert.equal((await call(ack,'/api/family-message-receipts',{team_code:'KS-TEST',message_id:'change-test-two'},pc)).status,403);
  console.log('PASS complete rec pilot: practice creation/change/cancel, atomic announcement, retry deduplication, stale edit rejection, family and calendar updates, current driver link, per-update acknowledgment, authorization, activity deduplication, cost/time log validation, reversible corrections and renewal history. All delivery mocked.');

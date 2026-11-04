@@ -7,7 +7,7 @@ import {ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
 
 export async function onRequestGet(context){const response=await loadTeam(context);if(response.ok){try{const db=context.env.SPORTS_DB,code=new URL(context.request.url).searchParams.get('code')?.toUpperCase(),policy=await teamPolicy(db,code),parent=await parentSession(context.request,db);if(parent&&['rec','travel'].includes(policy?.kind)){await pilotSchema(db);await db.prepare('INSERT OR IGNORE INTO pep_family_activity VALUES(?,?,?)').bind(code,await sha256(parent.email),new Date().toLocaleDateString('en-CA',{timeZone:'America/Denver'})).run()}}catch{ /* Measurement must not interrupt family access. */ }}return response}
 // Internal principal is supplied only after calendar/driver token verification.
-export async function loadTeam({request,env},principal=null){
+export async function loadTeam({request,env},principal=null,{includeCancelled=false}={}){
   if(!env.SPORTS_DB)return json({success:false,error:'Team connection is temporarily unavailable.'},503);
   const db=env.SPORTS_DB;
   try{
@@ -29,12 +29,12 @@ export async function loadTeam({request,env},principal=null){
     const parent=principal||await parentSession(request,db);
     if(!await hasMembership(db,parent?.email,code))return json({success:false,code:'GUARDIAN_APPROVAL_REQUIRED',error:parent?`Your ${category==='school'?'school':'team administrator'} must approve your guardian access before you can view private team information.`:`Sign in to My Family, then request ${category==='school'?'school':'team'} approval for guardian access.`},parent?403:401);
 
-    const events=await teamEvents(db,code);
+    const events=await teamEvents(db,code,includeCancelled);
     const messages=(await db.prepare(`
       SELECT id,author,body,created_at
       FROM coach_team_messages
       WHERE team_code=?
-      ORDER BY datetime(created_at) DESC
+      ORDER BY datetime(created_at) DESC, rowid DESC
       LIMIT 50
     `).bind(code).all()).results||[];
 

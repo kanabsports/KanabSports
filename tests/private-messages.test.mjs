@@ -8,7 +8,7 @@ import {pushSchema,digest} from '../functions/_lib/web-push.js';
 import {onRequest as endpoint} from '../functions/api/private-messages.js';
 import {onRequest as pushEndpoint} from '../functions/api/private-message-push.js';
 const sqlite=new DatabaseSync(':memory:');
-const db={prepare(sql){const statement=sqlite.prepare(sql);let args=[];return {bind(...values){args=values;return this;},async run(){const r=statement.run(...args);return {...r,meta:{changes:r.changes}};},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};}};},async batch(statements){sqlite.exec('BEGIN');try{const result=[];for(const s of statements)result.push(await s.run());sqlite.exec('COMMIT');return result;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
+const db={prepare(sql){const statement=sqlite.prepare(sql);let args=[];return {bind(...values){args=values;return this;},runSync(){const r=statement.run(...args);return {...r,meta:{changes:r.changes}};},async run(){return this.runSync()},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};}};},async batch(statements){sqlite.exec('BEGIN');try{const result=[];for(const s of statements)result.push(s.runSync());sqlite.exec('COMMIT');return result;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
 await ensureCoachCore(db);await accessSchema(db);await schoolSchema(db);await schema(db);await pushSchema(db);
 sqlite.exec('CREATE TABLE parent_accounts(email TEXT PRIMARY KEY,name TEXT,created INTEGER,last_seen INTEGER)');
 const tokens={},now=Date.now();
@@ -74,6 +74,19 @@ assert.equal((await call('otherA','parent',{...send,conversation:other})).status
 const reply={action:'send',conversation:c,message_id:crypto.randomUUID(),message:'Fictional coach reply',category:'general',subject:'Practice question'};
 assert.equal((await call('coachA','coach',reply)).status,200);assert.equal(mail.at(-1).body.to[0],'parentA@example.test');assert.ok(pushCalls.at(-1).endsWith('fictional-parent'));
 assert.equal((await call('parentA','parent',null,'&conversation='+c)).data.messages[1].sender_name,'Casey Fiction');
+// Hold the clock still and submit overlapping HTTP requests through the real handler.
+const originalNow=Date.now;
+Date.now=()=>now;
+try{
+ const burst=[...Array(4)].map((_,i)=>({...reply,message:'Simultaneous Pep Talk '+i,message_id:crypto.randomUUID()}));
+ const results=await Promise.all([...burst,burst[0]].map(b=>call('coachA','coach',b)));
+ assert(results.every(r=>r.status===200));
+ const received=(await call('parentA','parent',null,'&conversation='+c)).data.messages.filter(m=>burst.some(b=>b.message_id===m.id));
+ assert.equal(received.length,4);assert.equal(new Set(received.map(m=>m.sequence)).size,4);
+ assert(received.every((m,i)=>m.created===now&&(!i||m.sequence>received[i-1].sequence)));
+ for(const b of burst){assert.equal(mail.filter(x=>x.key==='private-message-'+b.message_id).length,1);}
+ console.log('PASS four simultaneous private Pep Talks and a duplicate retry: four stored, ordered, individually notified.');
+}finally{Date.now=originalNow;}
 emailMode='reject';pushMode='gone';
 assert.equal((await call('parentA','parent',{...send,message_id:crypto.randomUUID()})).status,200);
 history=(await call('parentA','parent',null,'&conversation='+c)).data.messages;

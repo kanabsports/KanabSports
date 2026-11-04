@@ -1,10 +1,9 @@
-import {cancelAffectedDriverReminders} from '../_lib/driver-reminders.js';
+import {notifySchedule} from '../_lib/schedule-notifications.js';
 import {getCoach,ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
 import {teamPolicy,messagingGate} from '../_lib/school-access.js';
 import {teamSchema} from './team-connection.js';
 import {teamEvents} from '../_lib/team-events.js';
 import {pilotSchema} from '../_lib/pilot-schema.js';
-import {notifyTeam} from '../_lib/web-push.js';
 import {findBlockedWords,LANGUAGE_NOTE} from '../../assets/pep-language.mjs';
 export async function onRequest({request,env}){
  const db=env.SPORTS_DB;if(!db)return json({error:'Team schedule unavailable.'},503);
@@ -32,8 +31,7 @@ export async function onRequest({request,env}){
  db.prepare("INSERT INTO coach_team_messages(id,coach_id,team_code,author,body,created_at) SELECT ?,?,?,?,?,datetime('now') FROM pep_event_changes WHERE team_code=? AND event_id=? AND json_extract(event_json,'$.changeId')=?").bind(changeId,coach.id,code,coach.name,body,code,id,changeId)
  ]);
  if(!(result[0].meta?.changes??result[0].changes))return json({error:'Another coach updated the event. Reload before trying again.'},409);
- await cancelAffectedDriverReminders(db,env,code,id,{authorizedPracticeWorkflow:true});
- let pushed={accepted:0,failed:0};if(result[1].meta?.changes??result[1].changes){try{pushed=await notifyTeam(db,code,changeId)}catch{pushed.failed=1}}
+ let pushed={accepted:0,failed:0};if(result[1].meta?.changes??result[1].changes){try{pushed=await notifySchedule(db,env,code,id,version,{practice:true})}catch{pushed.failed=1}}
  return json({success:true,version,push:pushed,message:'Schedule and family announcement saved together. '+(pushed.accepted?'App notifications accepted; delivery and reading are not confirmed.':'No app notification was confirmed. The update remains in My Family until acknowledged.')});
  }catch{return json({error:'Could not confirm the change. Retry this same form before creating another update.'},500)}
 }

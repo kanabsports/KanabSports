@@ -20,17 +20,30 @@ export async function onRequest({request,env}){
         SELECT id,author,body,created_at
         FROM coach_team_messages
         WHERE team_code=?
-        ORDER BY datetime(created_at) DESC
+        ORDER BY datetime(created_at) DESC, rowid DESC
         LIMIT 50
       `).bind(teamCode).all()).results||[];
-      const policy=await teamPolicy(db,teamCode);let eligibleGuardians=null;
+      const policy=await teamPolicy(db,teamCode);
+      const selection=await db.prepare('SELECT kind,revision FROM coach_team_categories WHERE team_code=?').bind(teamCode).first();
+      let eligibleGuardians=null;
       if(['rec','travel'].includes(policy?.kind)){await pilotSchema(db);eligibleGuardians=Number((await db.prepare("SELECT COUNT(DISTINCT email) n FROM guardian_memberships WHERE team_code=? AND status='approved' AND expires>?").bind(teamCode,Date.now()).first()).n);for(const row of rows){row.acknowledged=Number((await db.prepare("SELECT COUNT(DISTINCT r.email) n FROM pep_message_receipts r WHERE r.message_id=? AND r.team_code=? AND EXISTS(SELECT 1 FROM guardian_memberships m WHERE m.email=r.email AND m.team_code=r.team_code AND m.status='approved' AND m.expires>?)").bind(row.id,teamCode,Date.now()).first()).n)}}
-      return json({success:true,gate:await messagingGate(db,teamCode),teamCode,team,sport:coach.sport,eligibleGuardians,messages:rows,inviteUrl:`${new URL(request.url).origin}/family/?code=${encodeURIComponent(teamCode)}`});
+      return json({success:true,gate:await messagingGate(db,teamCode),teamCode,team,category:selection?.kind||policy?.kind||null,categoryRevision:selection?.revision||0,approvedCategory:policy?.kind||null,sport:coach.sport,eligibleGuardians,messages:rows,inviteUrl:`${new URL(request.url).origin}/family/?code=${encodeURIComponent(teamCode)}`});
     }
 
     if(request.method!=='POST')return json({success:false,error:'Method not allowed.'},405);
     if(!sameOrigin(request))return json({success:false,error:'Open the Coach Portal at kanabsports.com.'},403);
     const body=await request.json(),action=clean(body.action,30);
+    if(action==='set_category'){
+      if(request.headers.get('Origin')!==new URL(request.url).origin||/assistant/i.test(coach.role))return json({error:'Only a verified lead coach can edit the team type.'},403);
+      if(!['rec','school','travel'].includes(body.kind)||!Number.isSafeInteger(body.revision)||body.revision<0)return json({error:'Choose a team type and refresh the team first.'},400);
+      await teamPolicy(db,teamCode);
+      const row=await db.prepare(`INSERT INTO coach_team_categories(team_code,kind,coach_id,revision)
+        SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM coach_access_requests WHERE id=? AND team_code=? AND status='approved' AND lower(role) NOT LIKE '%assistant%')
+        AND (EXISTS(SELECT 1 FROM coach_team_categories WHERE team_code=? AND revision=?) OR (?=0 AND NOT EXISTS(SELECT 1 FROM coach_team_categories WHERE team_code=?)))
+        ON CONFLICT(team_code) DO UPDATE SET kind=excluded.kind,coach_id=excluded.coach_id,revision=excluded.revision
+        WHERE coach_team_categories.revision=? RETURNING revision`).bind(teamCode,body.kind,coach.id,body.revision+1,coach.id,teamCode,teamCode,body.revision,body.revision,teamCode,body.revision).first();
+      return row?json({success:true,revision:row.revision}):json({error:'Another coach changed the team. Reload and try again.'},409);
+    }
     if(action!=='post')return json({success:false,error:'Unknown action.'},400);
 
     const gate=await messagingGate(db,teamCode);if(!gate.allowed)return json({success:false,code:'SCHOOL_APPROVAL_REQUIRED',error:gate.reason},403);
@@ -57,13 +70,16 @@ export async function onRequest({request,env}){
 
 async function ensureTeamCode(db,coach){
   if(coach.team_code)return coach.team_code;
-  const existing=await db.prepare(`SELECT team_code FROM coach_access_requests WHERE team_code IS NOT NULL AND lower(organization)=lower(?) AND lower(COALESCE(team_name,''))=lower(COALESCE(?,'')) AND lower(sport)=lower(?) ORDER BY reviewed_at DESC LIMIT 1`).bind(coach.organization,coach.team_name||'',coach.sport).first();
-  if(existing?.team_code){await db.prepare('UPDATE coach_access_requests SET team_code=? WHERE id=?').bind(existing.team_code,coach.id).run();return existing.team_code}
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   for(let n=0;n<12;n++){
-    const b=crypto.getRandomValues(new Uint8Array(6)),code='KS-'+Array.from(b,x=>chars[x%chars.length]).join('');
-    const found=await db.prepare('SELECT id FROM coach_access_requests WHERE team_code=? LIMIT 1').bind(code).first();
-    if(!found){await db.prepare('UPDATE coach_access_requests SET team_code=? WHERE id=?').bind(code,coach.id).run();return code}
+    const b=crypto.getRandomValues(new Uint8Array(6)),candidate='KS-'+Array.from(b,x=>chars[x%chars.length]).join('');
+    // Reuse an assigned code, including one created by a concurrent request.
+    const saved=await db.prepare(`UPDATE coach_access_requests SET team_code=COALESCE(team_code,(
+      SELECT team_code FROM coach_access_requests WHERE status='approved' AND team_code IS NOT NULL
+      AND lower(organization)=lower(?) AND lower(COALESCE(team_name,''))=lower(COALESCE(?,''))
+      AND lower(sport)=lower(?) ORDER BY reviewed_at DESC LIMIT 1),?)
+      WHERE id=? AND status='approved' AND NOT EXISTS(SELECT 1 FROM coach_access_requests WHERE team_code=?) RETURNING team_code`).bind(coach.organization,coach.team_name||'',coach.sport,candidate,coach.id,candidate).first();
+    if(saved?.team_code)return saved.team_code;
   }
   throw new Error('Could not create team code');
 }
