@@ -1,0 +1,31 @@
+name: Kanab Sports checks
+on:
+  pull_request:
+    paths:
+      - 'family/**'
+      - 'functions/**'
+      - 'tests/**'
+      - '.github/workflows/kanab-checks.yml'
+      - 'tools/family-layout-check.cjs'
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run the repository tests using fictional data
+        run: |
+          set -e
+          for f in tests/*.mjs; do node "$f"; done
+      - name: Check family navigation on mobile and desktop
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pep-browser" playwright-core@1.55.0
+          python3 -m http.server 8080 > "$RUNNER_TEMP/pep-server.log" 2>&1 &
+          NODE_PATH="$RUNNER_TEMP/pep-browser/node_modules" node tools/family-layout-check.cjs
