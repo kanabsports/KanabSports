@@ -1,3 +1,5 @@
+import {passId,classifyTravel} from './_lib/travel-pass.js';
+import {ensureCoachCore} from './_lib/coach-auth.js';
 export async function onRequest({request,env}){
   if(!env.SPORTS_DB||!env.RESEND_API_KEY)return page('Coach approval is not configured yet.',false,503);
   const url=new URL(request.url);
@@ -8,7 +10,7 @@ export async function onRequest({request,env}){
       if(!token)return page('This approval link is invalid.',false,400);
       const row=await findRequest(env.SPORTS_DB,token);
       if(!row)return page('This approval link is invalid or has already been used.',false,404);
-      if(row.status!=='pending')return page(`This coach request has already been ${row.status}.`,row.status==='approved',409);
+      if(row.status!=='pending'&&!(row.id===passId&&['approved','pass_expired'].includes(row.status)))return page(`This coach request has already been ${row.status}.`,row.status==='approved',409);
       if(!row.review_expires_at||Date.parse(row.review_expires_at)<Date.now())return page('This coach access link has expired.',false,410);
       return reviewPage(row,token,hint);
     }
@@ -18,9 +20,10 @@ export async function onRequest({request,env}){
       if(!token||!['approve','reject'].includes(action))return page('Choose approve or deny.',false,400);
       const row=await findRequest(env.SPORTS_DB,token);
       if(!row)return page('This approval link is invalid or has already been used.',false,404);
-      if(row.status!=='pending')return page(`This coach request has already been ${row.status}.`,row.status==='approved',409);
+      if(row.status!=='pending'&&!(row.id===passId&&['approved','pass_expired'].includes(row.status)))return page(`This coach request has already been ${row.status}.`,row.status==='approved',409);
       if(!row.review_expires_at||Date.parse(row.review_expires_at)<Date.now())return page('This coach access link has expired.',false,410);
 
+      if(row.id===passId)return decideInvite(env,row,token,action,url.origin);
       if(action==='reject'){
         await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET status='rejected',reviewed_at=datetime('now'),review_token_hash=NULL WHERE id=? AND status='pending'`).bind(row.id).run();
         return page('Coach access denied.',true,200,'No account setup email was sent.');
@@ -43,6 +46,22 @@ export async function onRequest({request,env}){
   }
 }
 
+async function decideInvite(env,row,token,action,origin){
+  const db=env.SPORTS_DB,approve=action==='approve',decision=approve?'approved':'rejected';
+  const statements=[db.prepare(`UPDATE coach_access_requests SET status=?,review_token_hash=NULL,reviewed_at=datetime('now')
+    WHERE id=? AND review_token_hash=? AND datetime(review_expires_at)>datetime('now') AND status IN ('pending','approved','pass_expired')`).bind(decision,passId,await sha256(token))];
+  await ensureCoachCore(db);
+  if(approve){
+    statements.push(classifyTravel(db),db.prepare(`UPDATE coach_sessions SET expires_at=datetime('now','+30 days')
+      WHERE coach_id=? AND datetime(expires_at)>datetime('now') AND EXISTS(SELECT 1 FROM coach_access_requests WHERE id=? AND status='approved' AND review_token_hash IS NULL)`).bind(passId,passId));
+  }else statements.push(db.prepare("DELETE FROM coach_sessions WHERE coach_id=? AND EXISTS(SELECT 1 FROM coach_access_requests WHERE id=? AND status='rejected')").bind(passId,passId));
+  const results=await db.batch(statements);
+  if(!(results[0].meta?.changes??results[0].changes))return page('This review link is no longer active.',false,409);
+  if(!approve)return page('Travel coach access ended.',true,200);
+  const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':'travel-confirm-'+row.id},body:JSON.stringify({from:'Kanab Sports <website@kanabsports.com>',to:[row.email],subject:'Your travel coach account is approved',text:`Your coach access is confirmed. Set up your password or sign in at ${origin}/coach-account.html. Your team code is ${row.team_code}.`})}).catch(()=>null);
+  return page('Travel coach access confirmed.',true,200,sent?.ok?'The same team and account remain active. A confirmation was emailed to the coach.':'Access is active. Coach confirmation email delivery was not confirmed.');
+}
+
 async function findRequest(db,token){
   const hash=await sha256(token);
   return await db.prepare(`SELECT id,name,email,organization,team_name,team_code,sport,role,status,review_expires_at FROM coach_access_requests WHERE review_token_hash=? LIMIT 1`).bind(hash).first();
@@ -50,7 +69,7 @@ async function findRequest(db,token){
 
 function reviewPage(row,token,hint){
   const team=row.team_name||row.organization||row.sport;
-  return new Response(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Review Coach Access · Kanab Sports</title><style>${css}</style></head><body><main class="card"><div class="brand">KANAB <span>SPORTS</span></div><div class="eyebrow">Coach access review</div><h1>${esc(row.name)}</h1><div class="details"><b>${esc(row.role)}</b><br>${esc(team)}<br>${esc(row.sport)}<br>${esc(row.email)}</div><p>Confirm this person belongs with this team before activating their coach account.</p><form method="post"><input type="hidden" name="token" value="${esc(token)}"><button class="approve" name="action" value="approve" type="submit">✓ Approve Coach</button><button class="deny" name="action" value="reject" type="submit">Deny request</button></form></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
+  return new Response(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Review Coach Access · Kanab Sports</title><style>${css}</style></head><body><main class="card"><div class="brand">KANAB <span>SPORTS</span></div><div class="eyebrow">Coach access review</div><h1>${esc(row.name)}</h1><div class="details"><b>${esc(row.role)}</b><br>${esc(team)}<br>${esc(row.sport)}<br>${esc(row.email)}</div><p>${row.id===passId?'This travel pass lasts 72 hours from email verification. Approve for ongoing access, or deny to end access.':'Confirm this person belongs with this team before activating their coach account.'}</p><form method="post"><input type="hidden" name="token" value="${esc(token)}"><button class="approve" name="action" value="approve" type="submit">✓ Approve Coach</button><button class="deny" name="action" value="reject" type="submit">Deny request</button></form></main></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
 }
 
 async function ensureSchema(db){

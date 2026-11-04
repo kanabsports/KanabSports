@@ -1,6 +1,8 @@
+import {expirePass} from './_lib/travel-pass.js';
 import {removeBullsharksTest} from './_migrations/remove-bullsharks-test.js';
 export async function onRequest(context) {
   const url0=new URL(context.request.url);
+  if(context.env.SPORTS_DB && (url0.pathname.startsWith('/api/') || ['/coach-access-review','/review','/coach-register'].includes(url0.pathname)))await expirePass(context.env.SPORTS_DB);
   let cleanupRows=null;
   if(url0.hostname==='kanabsports.com'&&context.env.SPORTS_DB){
     try{cleanupRows=(await removeBullsharksTest(context.env.SPORTS_DB,context.env))?.deleted_rows??null}catch(error){console.error('Approved test cleanup failed',error?.message)}

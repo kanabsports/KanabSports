@@ -1,3 +1,4 @@
+import {passId,eligibleSetup,beforeExpiry,classifyTravel} from '../_lib/travel-pass.js';
 import {ensureCoachCore} from '../_lib/coach-auth.js';
 const COOKIE='ks_coach';
 export async function onRequestGet({request,env}){
@@ -30,7 +31,7 @@ export async function onRequestPost({request,env}){
     }
     if(action==='request_otp'){
       if(!env.RESEND_API_KEY)return json({success:false,error:'Verification email is temporarily unavailable.'},503);
-      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();
+      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email FROM coach_access_requests WHERE ${eligibleSetup} AND ${beforeExpiry} AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();
       if(!coach)return ownerSignIn(email)||json({success:true,message:'If that approved coach email exists, a code was sent.'});
       const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0'),hash=await sha256(code),expires=new Date(Date.now()+10*60000).toISOString(),id=crypto.randomUUID();
       await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=?`).bind(coach.id).run();
@@ -43,15 +44,24 @@ export async function onRequestPost({request,env}){
     }
     if(action==='set_password'){
       const otp=clean(body.otp,12),password=String(body.password||'');if(password.length<10||password.length>200)return json({success:false,error:'Use at least 10 characters.'},400);
-      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'Approved coach account not found.'},404);
+      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash FROM coach_access_requests WHERE ${eligibleSetup} AND ${beforeExpiry} AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'Approved coach account not found.'},404);
       if(!/^\d{6}$/.test(otp))return json({success:false,error:'Enter the 6-digit verification code.'},400);
       const codeHash=await sha256(otp),row=await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=? AND code_hash=? AND datetime(expires_at)>datetime('now') RETURNING id`).bind(coach.id,codeHash).first();if(!row)return json({success:false,error:'That verification code is invalid or expired.'},403);
-      const salt=randomHex(16),iterations=60000,hash=await passwordHash(password,salt,iterations);await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET password_hash=?,password_salt=?,password_iterations=? WHERE id=?`).bind(hash,salt,iterations,coach.id).run();await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=?`).bind(coach.id).run();
+      const salt=randomHex(16),iterations=60000,hash=await passwordHash(password,salt,iterations);if(coach.id===passId){
+        const results=await env.SPORTS_DB.batch([
+          env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET password_hash=?,password_salt=?,password_iterations=?,
+            reviewed_at=CASE WHEN status='pending' THEN datetime('now') ELSE reviewed_at END,status='approved'
+            WHERE id=? AND ${eligibleSetup} AND ${beforeExpiry} AND team_code IS NOT NULL
+            AND NOT EXISTS(SELECT 1 FROM school_teams t WHERE t.team_code=coach_access_requests.team_code AND (t.kind<>'travel' OR t.school_id IS NOT NULL))`).bind(hash,salt,iterations,coach.id),
+          classifyTravel(env.SPORTS_DB)
+        ]);
+        if(!(results[0].meta?.changes??results[0].changes))return json({success:false,error:'This invitation is unavailable. Contact the team owner.'},403);
+      }else await env.SPORTS_DB.prepare(`UPDATE coach_access_requests SET password_hash=?,password_salt=?,password_iterations=? WHERE id=?`).bind(hash,salt,iterations,coach.id).run();await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=?`).bind(coach.id).run();
       await env.SPORTS_DB.prepare('DELETE FROM coach_sessions WHERE coach_id=?').bind(coach.id).run();
       return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Password saved. You are signed in.',firstSetup:!coach.password_hash});
     }
     if(action==='login'){
-      const password=String(body.password||'');if(password.length>200)return json({success:false,error:'Invalid password.'},400);const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash,password_salt,password_iterations FROM coach_access_requests WHERE status='approved' AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'No coach password is set for that email.'},403);if(!coach.password_hash)return json({success:false,error:'No coach password is set for that email.'},403);
+      const password=String(body.password||'');if(password.length>200)return json({success:false,error:'Invalid password.'},400);const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash,password_salt,password_iterations FROM coach_access_requests WHERE status='approved' AND ${beforeExpiry} AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'No coach password is set for that email.'},403);if(!coach.password_hash)return json({success:false,error:'No coach password is set for that email.'},403);
       const hash=await passwordHash(password,coach.password_salt,Number(coach.password_iterations||60000));if(!constant(hash,coach.password_hash))return json({success:false,error:'Email or password is incorrect.'},403);
       return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Signed in.'});
     }
@@ -59,7 +69,10 @@ export async function onRequestPost({request,env}){
     return json({success:false,error:'Invalid action.'},400);
   }catch(error){console.error('coach account error',error);return json({success:false,error:'Something went wrong.'},500)}
 }
-async function makeSession(db,coachId,email,data){const token=randomHex(32),hash=await sha256(token),id=crypto.randomUUID(),expires=new Date(Date.now()+30*86400000).toISOString();await db.prepare(`INSERT INTO coach_sessions (id,coach_id,email,token_hash,expires_at,created_at) VALUES (?,?,?,?,?,datetime('now'))`).bind(id,coachId,email,hash,expires).run();const r=json(data);r.headers.append('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30*86400}`);return r}
+async function makeSession(db,coachId,email,data){const token=randomHex(32),hash=await sha256(token),id=crypto.randomUUID(),expires=new Date(Date.now()+30*86400000).toISOString();const session=await db.prepare(`INSERT INTO coach_sessions(id,coach_id,email,token_hash,expires_at,created_at)
+ SELECT ?,id,email,?,CASE WHEN id=? AND review_token_hash IS NOT NULL THEN datetime(reviewed_at,'+72 hours') ELSE ? END,datetime('now')
+ FROM coach_access_requests WHERE id=? AND status='approved' AND ${beforeExpiry} RETURNING id`).bind(id,hash,passId,expires,coachId).first();
+ if(!session)return json({success:false,error:'Coach access has expired or changed.'},403);const r=json(data);r.headers.append('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30*86400}`);return r}
 async function schema(db){await ensureCoachCore(db);await db.prepare('CREATE TABLE IF NOT EXISTS coach_auth_limits(key TEXT PRIMARY KEY,count INTEGER NOT NULL)').run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_login_otps (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,code_hash TEXT NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_sessions (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();for(const q of [`ALTER TABLE coach_access_requests ADD COLUMN password_hash TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_salt TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_iterations INTEGER`,`ALTER TABLE coach_access_requests ADD COLUMN team_name TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN team_code TEXT`])try{await db.prepare(q).run()}catch{}}
 async function passwordHash(password,saltHex,iterations){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']),salt=new Uint8Array(saltHex.match(/.{2}/g).map(x=>parseInt(x,16))),bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations},key,256);return hex(new Uint8Array(bits))}
 async function sha256(v){return hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(v))))) }

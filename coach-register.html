@@ -8,6 +8,10 @@ form.addEventListener('submit',async event=>{
     const response=await fetch('/coach-register',{method:'POST',body:new FormData(form)}),data=await response.json();
     if(!response.ok||!data.success)throw Error(data.error||'Could not send request.');
     form.reset();submit.textContent='Request received';
+    if(data.inviteSetup){
+      status.textContent='Your invitation is ready. Verify your email and set a password to open your team for 72 hours while your request is reviewed. ';
+      const link=document.createElement('a');link.href='/coach-account.html#setup';link.textContent='Set up my coach account →';link.style.color='inherit';status.append(link);return;
+    }
     status.textContent='Your request is in review. Once approved, check your email for the link to set your coach password.';
   }catch(error){
     status.textContent=error.message||'Could not confirm your request. Please try again.';
