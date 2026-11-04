@@ -23,7 +23,7 @@ el('note').onclick();el('move').onclick();
 for(const [id,alerts,shown] of [['chen',1,['Alert shown','Quiet inbox delivery']],['parker',2,['Alert shown','Alert shown']],['ellis',0,['Quiet inbox delivery','Quiet inbox delivery']]]){
   el('family').value=id;el('family').onchange();
   assert.equal(el('family-time').textContent,'5:00 PM · Community gym');
-  assert.match(el('result').textContent,new RegExp(alerts+' simulated alerts'));
+  assert.equal(el('result').textContent,'Sample inbox · '+alerts+' simulated '+(alerts===1?'alert':'alerts'));
   assert.deepEqual(el('inbox').children.map(x=>x.children[0].textContent),shown);
 }
 el('reset').onclick();assert.equal(el('family').value,'chen');assert.deepEqual(el('inbox').children,[]);

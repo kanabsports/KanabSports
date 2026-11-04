@@ -17,7 +17,8 @@ function render(){
   el('practice-pref').textContent=family.preference;
   el('practice-move').disabled=moved;
   el('practice-note').disabled=entries.some(entry=>entry.category==='general');
-  el('practice-result').textContent=entries.length?'Sample inbox · '+entries.filter(entry=>family.alerts.includes(entry.category)).length+' simulated alerts':'The family is expecting practice at four. Try the coach controls.';
+  const count=entries.filter(entry=>family.alerts.includes(entry.category)).length;
+  el('practice-result').textContent=entries.length?'Sample inbox · '+count+' simulated '+(count===1?'alert':'alerts'):'The family is expecting practice at four. Try the coach controls.';
   el('practice-inbox').replaceChildren(...entries.map(entry=>{
     const item=document.createElement('li');
     const result=family.alerts.includes(entry.category)?'Alert shown':'Quiet inbox delivery';
