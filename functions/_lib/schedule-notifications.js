@@ -3,14 +3,16 @@ import {sharingSchema,delegated} from './family-sharing.js';
 import {allowedChannels} from './notification-preferences.js';
 import {sendEmail} from './score-invitations.js';
 import {pushSchema,sendPush} from './web-push.js';
-import {messagingOrigin} from './private-messages.js';
+import {messagingOrigin,schema as messageSchema} from './private-messages.js';
 import {teamPolicy} from './school-access.js';
 import {hasMembership} from './parent-access.js';
-export async function notifySchedule(db,env,code,event,revision){
+export async function notifySchedule(db,env,code,event,revision,{practice=false}={}){
  // Cancellation precedes notices and is independent of notification preferences.
  // Schedule triggers already marked affected attempts stale atomically.
- await cancelAffectedDriverReminders(db,env,code,event);
+ await cancelAffectedDriverReminders(db,env,code,event,{authorizedPracticeWorkflow:practice});
  await pushSchema(db);
+ if(env.PRIVATE_MESSAGING_ENABLED==='true')await messageSchema(db);
+ const totals={accepted:0,failed:0};
  await db.prepare('CREATE TABLE IF NOT EXISTS schedule_notice_attempts(event_key TEXT NOT NULL,recipient TEXT NOT NULL,email_status TEXT NOT NULL,push_status TEXT NOT NULL,PRIMARY KEY(event_key,recipient))').run();
  const recipients=(await db.prepare("SELECT DISTINCT email FROM guardian_memberships WHERE team_code=? AND status='approved' AND expires>?").bind(code,Date.now()).all()).results||[];
  if(env.FAMILY_SHARING_ENABLED==='true'){
@@ -24,11 +26,13 @@ export async function notifySchedule(db,env,code,event,revision){
  const claim=await db.prepare("INSERT OR IGNORE INTO schedule_notice_attempts VALUES(?,?,'processing','processing') RETURNING recipient").bind(key,email).first();if(!claim)continue;
  try{const channels=await allowedChannels(db,'parent',email,'schedule');
  const mail=channels.email?await sendEmail(env,{to:[email],subject:'A team schedule changed in Pep',text:'Open My Family for the current schedule:\n'+messagingOrigin(env)+'/family/\n\nPep attempts to cancel outdated scheduled driver reminders. Open your driver plan to check cancellation and authorize a replacement if needed. Reminders already sent cannot be recalled. No revised driver reminder is sent automatically.'},'schedule-'+await hash(key+email)):{delivery:'muted'};
- const devices=channels.push?(await db.prepare('SELECT id,endpoint FROM push_devices WHERE parent_email=?').bind(email).all()).results||[]:[];
- if(channels.push){const privateDevices=(await db.prepare("SELECT id,endpoint FROM private_push_devices WHERE role='parent' AND identity=?").bind(email).all()).results||[];for(const d of privateDevices)if(!devices.some(x=>x.endpoint===d.endpoint))devices.push({...d,private:true});}
+ const devices=channels.push?(await db.prepare('SELECT id,endpoint FROM push_devices WHERE parent_email=? AND EXISTS(SELECT 1 FROM json_each(codes) WHERE value=?)').bind(email,code).all()).results||[]:[];
+ if(channels.push&&env.PRIVATE_MESSAGING_ENABLED==='true'){const privateDevices=(await db.prepare("SELECT id,endpoint FROM private_push_devices WHERE role='parent' AND identity=?").bind(email).all()).results||[];for(const d of privateDevices)if(!devices.some(x=>x.endpoint===d.endpoint))devices.push({...d,private:true});}
  const statuses=[];for(const device of devices){if(!await authorized(email)){statuses.push('suppressed');continue;}try{statuses.push(await sendPush(db,device,device.private?'private_push_devices':'push_devices'));}catch{statuses.push('unconfirmed');}}
+ for(const status of statuses)totals[status==='accepted'?'accepted':'failed']++;
  await db.prepare('UPDATE schedule_notice_attempts SET email_status=?,push_status=? WHERE event_key=? AND recipient=?').bind(mail.accepted?'accepted':mail.delivery,channels.push?(statuses.length?(statuses.every(x=>x==='accepted')?'accepted':'failed'):'no_devices'):'muted',key,email).run();
  }catch{await db.prepare("UPDATE schedule_notice_attempts SET email_status='unconfirmed',push_status='unconfirmed' WHERE event_key=? AND recipient=?").bind(key,email).run();}
  }
+ return totals;
 }
 async function hash(v){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v))),b=>b.toString(16).padStart(2,'0')).join('');}
