@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
-const load=async path=>import('data:text/javascript;base64,'+Buffer.from(readFileSync(new URL(path,import.meta.url),'utf8')).toString('base64'));
-const core=readFileSync(new URL('../functions/_lib/coach-auth.js',import.meta.url),'utf8');
-const source=readFileSync(new URL('../functions/api/coach-account.js',import.meta.url),'utf8').replace("'../_lib/coach-auth.js'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(core).toString('base64')));
-const coach=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
-const auth=await load('../functions/api/admin-auth.js'),dashboard=await load('../functions/api/admin-dashboard.js');
+import * as coach from '../functions/api/coach-account.js';
+import * as auth from '../functions/api/admin-auth.js';
+import * as dashboard from '../functions/api/admin-dashboard.js';
 const sql=new DatabaseSync(':memory:');
 const db={prepare(query){return {args:[],bind(...args){this.args=args;return this},async run(){const r=sql.prepare(query).run(...this.args);return {meta:{changes:r.changes}}},async first(){return sql.prepare(query).get(...this.args)},async all(){return {results:sql.prepare(query).all(...this.args)}}}}};
 const postCoach=(action,email,password='A test password 123')=>coach.onRequestPost({request:new Request('https://kanabsports.com/api/coach-account',{method:'POST',headers:{Origin:'https://kanabsports.com','Content-Type':'application/json'},body:JSON.stringify({action,email,password,otp:'123456'})}),env:{SPORTS_DB:db,RESEND_API_KEY:'test'}});
