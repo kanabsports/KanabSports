@@ -8,7 +8,7 @@ import {onRequestPost as score} from '../functions/api/coach-submit.js';
 const root='https://kanabsports.com',email='fixture@example.test';
 const sqlite=new DatabaseSync(':memory:');
 
-const db={prepare(sql){const statement=sqlite.prepare(sql);let args=[];return {bind(...values){args=values;return this},async run(){return statement.run(...args)},async first(){return statement.get(...args)||null},async all(){return {results:statement.all(...args)}}}},async batch(statements){sqlite.exec('BEGIN');try{const result=await Promise.all(statements.map(s=>s.run()));sqlite.exec('COMMIT');return result}catch(e){sqlite.exec('ROLLBACK');throw e}}};
+const db={prepare(sql){const statement=sqlite.prepare(sql);let args=[];return {bind(...values){args=values;return this},async run(){return statement.run(...args)},async first(){return statement.get(...args)||null},async all(){return {results:statement.all(...args)}}}},async batch(statements){sqlite.exec('SAVEPOINT d1_batch');try{const result=await Promise.all(statements.map(s=>s.run()));sqlite.exec('RELEASE d1_batch');return result}catch(e){sqlite.exec('ROLLBACK TO d1_batch; RELEASE d1_batch');throw e}}};
 
 const env={SPORTS_DB:db,RESEND_API_KEY:'test',TURNSTILE_SECRET_KEY:'test'};
 const mail=[],tasks=[];
@@ -20,7 +20,7 @@ globalThis.fetch=async(url,opts)=>{
 const digest=crypto.subtle.digest.bind(crypto.subtle);
 crypto.subtle.digest=async (alg,bytes)=>new TextDecoder().decode(bytes)===email
  ?Uint8Array.from(Buffer.from('5bcb341b313ba840fc0fbc94ea81546bdf7c8b51cd359ab18bb555ed1a56a2f2','hex')).buffer:digest(alg,bytes);
-const req=(url,body)=>new Request(root+url,{method:'POST',headers:{Origin:root},body});
+const req=(url,body)=>new Request(root+url,{method:'POST',headers:typeof body==='string'?{Origin:root,'Content-Type':'application/json'}:{Origin:root},body});
 const auth=b=>account({request:req('/api/coach-account',JSON.stringify({...b,email})),env});
 const record=()=>sqlite.prepare('SELECT * FROM coach_access_requests WHERE id=?').get(passId);
 assert(await matchesPass(email.toUpperCase(),'Travel','Girls Basketball'));
