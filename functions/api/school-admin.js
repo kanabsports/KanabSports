@@ -31,10 +31,12 @@ export async function onRequest({request,env}){
   const email=String(b.athlete_email||'').trim().toLowerCase(),expires=Date.parse(b.expires+'T00:00:00Z'),now=Date.now();
   if(b.verified_teen!==true||!validEmail(email)||email.length>254||email===guardian||!(expires>now&&expires<=now+366*86400000))return json({error:'Verify a distinct athlete email, age 13–17, guardian consent and an expiry within one year.'},400);
   await db.prepare('UPDATE pep_student_enrollments SET active=0 WHERE membership_id=? AND expires<=?').bind(membership.id,now).run();
-  const row=await db.prepare(`INSERT OR IGNORE INTO pep_student_enrollments SELECT ?,g.id,t.organization_id,?,?,1,MIN(?,g.expires),1
+  const id=crypto.randomUUID();
+  const result=await db.batch([db.prepare(`INSERT OR IGNORE INTO pep_student_enrollments SELECT ?,g.id,t.organization_id,?,?,1,MIN(?,g.expires),1
     FROM guardian_memberships g JOIN (`+eligibleSQL+`) t ON t.team_code=g.team_code
-    WHERE g.id=? AND g.status='approved' AND g.expires>? LIMIT 1 RETURNING id`).bind(crypto.randomUUID(),email,evidence,expires,membership.id,now).first();
-  return row?json({success:true}):json({error:'Team is ineligible or already has an enrollment. Withdraw the prior enrollment before replacing it.'},409);
+    WHERE g.id=? AND g.status='approved' AND g.expires>? LIMIT 1`).bind(id,email,evidence,expires,membership.id,now),
+    db.prepare('INSERT INTO pep_athlete_controls SELECT id,0 FROM pep_student_enrollments WHERE id=?').bind(id)]);
+  return (result[0].meta?.changes??result[0].changes)?json({success:true}):json({error:'Team is ineligible or already has an enrollment. Withdraw the prior enrollment before replacing it.'},409);
  }
  if(b.action==='create_school'){
   const name=String(b.name||'').trim(),email=String(b.email||'').trim().toLowerCase(),expires=Date.parse(b.expires+'T00:00:00Z');
