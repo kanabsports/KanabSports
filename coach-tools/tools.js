@@ -6,4 +6,21 @@ $('cancelFamily').onclick=()=>$('audience').close();$('messageFamily').onsubmit=
 async function schedules(){const d=await api('team-schedule-edit');$('schedules').replaceChildren();for(const t of d.teams){const section=document.createElement('section');section.append(node('h3',t.team_name));for(const event of t.events){const form=document.createElement('form');form.append(node('h4',event.title));const inputs={};for(const [key,label,type] of [['date','Date','date'],['time','Time','text'],['title','Event title','text'],['detail','Location / details','text'],['cancelled','Cancelled','checkbox']]){const input=document.createElement('input');input.type=type;input.disabled=!d.can_edit;if(type==='checkbox')input.checked=!!event[key];else input.value=event[key]||'';const l=node('label',label+' ');l.append(input);form.append(l,document.createElement('br'));inputs[key]=input;}const save=node('button','Save schedule change');save.disabled=!d.can_edit;form.append(save);form.onsubmit=async e=>{e.preventDefault();save.disabled=true;try{const body={team_code:t.team_code,event_id:event.id,revision:event.revision};for(const [k,v] of Object.entries(inputs))body[k]=v.type==='checkbox'?v.checked:v.value;const result=await api('team-schedule-edit',body);$('status').textContent=result.message;await schedules();}catch(e){error(e);save.disabled=false;}};section.append(form);}if(!t.events.length)section.append(node('p','Upload and approve a schedule first.'));$('schedules').append(section);}}
 async function stats(){const d=await api('coach-stats');$('statsTeam').replaceChildren(...d.teams.map(t=>{const o=node('option',t.team_name);o.value=t.team_code;return o;}));$('files').replaceChildren(...d.files.map(f=>{const a=node('a',f.filename);a.href='/api/coach-stats?id='+encodeURIComponent(f.id);a.style.display='block';return a;}));if(!d.storageReady)$('files').append(node('p','Private PDF storage must be configured before uploading.'));}
 $('stats').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const form=new FormData();form.set('team_code',$('statsTeam').value);form.set('pdf',$('pdf').files[0]);const d=await api('coach-stats',form);$('status').textContent=d.message;await stats();}catch(e){error(e);}finally{button.disabled=false;}};
-await Promise.allSettled([directory().catch(error),schedules().catch(error),stats().catch(error)]);
+async function rosters(){
+ const {rosters}=await api('season-rosters');
+ for(const r of rosters)$('approvedRoster').add(new Option(r.team+' · '+r.season,r.document_id));
+ if(!rosters.length)$('rosterInfo').textContent='Your rec or travel roster will appear here after review.';
+}
+$('approvedRoster').onchange=async()=>{
+ const id=$('approvedRoster').value;$('playerCards').replaceChildren();$('rosterInfo').textContent='';if(!id)return;
+ try{
+  const {players}=await api('season-rosters?id='+encodeURIComponent(id));if(id!==$('approvedRoster').value)return;
+  for(const player of players){
+    const card=document.createElement('details');card.append(node('summary',player.student_name));
+    for(const g of player.guardians)card.append(node('p',[g.name,g.email].filter(Boolean).join(' · ')));
+    if(!player.guardians.length)card.append(node('p','No guardian contact supplied.'));
+    $('playerCards').append(card);
+  }
+ }catch(e){if(id===$('approvedRoster').value)$('rosterInfo').textContent=e.message;}
+};
+await Promise.allSettled([rosters().catch(e=>$('rosterInfo').textContent=e.message),directory().catch(error),schedules().catch(error),stats().catch(error)]);
