@@ -1,9 +1,11 @@
+import {syncAssistantAccess} from './assistant-coaches.js';
 const COOKIE='ks_coach';
 
 export async function getCoach(request,db){
   if(!db)return null;
   const token=cookie(request,COOKIE);
   if(!token)return null;
+  await syncAssistantAccess(db);
   const hash=await sha256(token);
   return await db.prepare(`
     SELECT a.id,a.name,a.email,a.phone,a.sport,a.organization,a.team_name,a.team_code,a.role,a.status

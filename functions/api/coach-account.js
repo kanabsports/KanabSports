@@ -1,10 +1,11 @@
+import {syncAssistantAccess} from '../_lib/assistant-coaches.js';
 import {passId,eligibleSetup,beforeExpiry,classifyTravel} from '../_lib/travel-pass.js';
 import {ensureCoachCore} from '../_lib/coach-auth.js';
 const COOKIE='ks_coach';
 export async function onRequestGet({request,env}){
   if(!env.SPORTS_DB)return json({authenticated:false,error:'Coach accounts are not configured yet.'},503);
   try{
-    await schema(env.SPORTS_DB);
+    await schema(env.SPORTS_DB);await syncAssistantAccess(env.SPORTS_DB);
     const token=cookie(request,COOKIE);
     if(!token)return json({authenticated:false});
     const hash=await sha256(token);
@@ -20,7 +21,7 @@ export async function onRequestPost({request,env}){
     if(request.headers.get('Origin')!==new URL(request.url).origin || new URL(request.url).origin!=='https://kanabsports.com')return json({success:false,error:'Open Kanab Sports to sign in.'},403);
     if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({success:false,error:'Invalid request.'},415);
     const raw=await request.text();if(raw.length>4000)return json({success:false,error:'Request too large.'},413);
-    await schema(env.SPORTS_DB);const body=JSON.parse(raw),action=clean(body.action,40),email=clean(body.email,180).toLowerCase();
+    await schema(env.SPORTS_DB);await syncAssistantAccess(env.SPORTS_DB);const body=JSON.parse(raw),action=clean(body.action,40),email=clean(body.email,180).toLowerCase(),coachId=clean(body.coachId,80);
     if(action!=='logout'){
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return json({success:false,error:'Enter a valid email.'},400);
       const ip=await sha256(request.headers.get('CF-Connecting-IP')||'unknown'),period=Math.floor(Date.now()/900000),max=action==='request_otp'?5:10;
@@ -31,7 +32,7 @@ export async function onRequestPost({request,env}){
     }
     if(action==='request_otp'){
       if(!env.RESEND_API_KEY)return json({success:false,error:'Verification email is temporarily unavailable.'},503);
-      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email FROM coach_access_requests WHERE ${eligibleSetup} AND ${beforeExpiry} AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();
+      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email FROM coach_access_requests WHERE ${eligibleSetup} AND ${beforeExpiry} AND lower(email)=? AND (?='' OR id=?) ORDER BY reviewed_at DESC LIMIT 1`).bind(email,coachId,coachId).first();
       if(!coach)return ownerSignIn(email)||json({success:true,message:'If that approved coach email exists, a code was sent.'});
       const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0'),hash=await sha256(code),expires=new Date(Date.now()+10*60000).toISOString(),id=crypto.randomUUID();
       await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=?`).bind(coach.id).run();
@@ -44,7 +45,7 @@ export async function onRequestPost({request,env}){
     }
     if(action==='set_password'){
       const otp=clean(body.otp,12),password=String(body.password||'');if(password.length<10||password.length>200)return json({success:false,error:'Use at least 10 characters.'},400);
-      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash FROM coach_access_requests WHERE ${eligibleSetup} AND ${beforeExpiry} AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'Approved coach account not found.'},404);
+      const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash FROM coach_access_requests WHERE ${eligibleSetup} AND ${beforeExpiry} AND lower(email)=? AND (?='' OR id=?) ORDER BY reviewed_at DESC LIMIT 1`).bind(email,coachId,coachId).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'Approved coach account not found.'},404);
       if(!/^\d{6}$/.test(otp))return json({success:false,error:'Enter the 6-digit verification code.'},400);
       const codeHash=await sha256(otp),row=await env.SPORTS_DB.prepare(`DELETE FROM coach_login_otps WHERE coach_id=? AND code_hash=? AND datetime(expires_at)>datetime('now') RETURNING id`).bind(coach.id,codeHash).first();if(!row)return json({success:false,error:'That verification code is invalid or expired.'},403);
       const salt=randomHex(16),iterations=60000,hash=await passwordHash(password,salt,iterations);if(coach.id===passId){
@@ -61,7 +62,7 @@ export async function onRequestPost({request,env}){
       return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Password saved. You are signed in.',firstSetup:!coach.password_hash});
     }
     if(action==='login'){
-      const password=String(body.password||'');if(password.length>200)return json({success:false,error:'Invalid password.'},400);const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash,password_salt,password_iterations FROM coach_access_requests WHERE status='approved' AND ${beforeExpiry} AND lower(email)=? ORDER BY reviewed_at DESC LIMIT 1`).bind(email).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'No coach password is set for that email.'},403);if(!coach.password_hash)return json({success:false,error:'No coach password is set for that email.'},403);
+      const password=String(body.password||'');if(password.length>200)return json({success:false,error:'Invalid password.'},400);const coach=await env.SPORTS_DB.prepare(`SELECT id,name,email,password_hash,password_salt,password_iterations FROM coach_access_requests WHERE status='approved' AND ${beforeExpiry} AND lower(email)=? AND (?='' OR id=?) ORDER BY reviewed_at DESC LIMIT 1`).bind(email,coachId,coachId).first();if(!coach)return ownerSignIn(email)||json({success:false,error:'No coach password is set for that email.'},403);if(!coach.password_hash)return json({success:false,error:'No coach password is set for that email.'},403);
       const hash=await passwordHash(password,coach.password_salt,Number(coach.password_iterations||60000));if(!constant(hash,coach.password_hash))return json({success:false,error:'Email or password is incorrect.'},403);
       return makeSession(env.SPORTS_DB,coach.id,coach.email,{success:true,message:'Signed in.'});
     }
@@ -69,12 +70,12 @@ export async function onRequestPost({request,env}){
     return json({success:false,error:'Invalid action.'},400);
   }catch(error){console.error('coach account error',error);return json({success:false,error:'Something went wrong.'},500)}
 }
-async function makeSession(db,coachId,email,data){const token=randomHex(32),hash=await sha256(token),id=crypto.randomUUID(),expires=new Date(Date.now()+30*86400000).toISOString();const session=await db.prepare(`INSERT INTO coach_sessions(id,coach_id,email,token_hash,expires_at,created_at)
+export async function makeSession(db,coachId,email,data){const token=randomHex(32),hash=await sha256(token),id=crypto.randomUUID(),expires=new Date(Date.now()+30*86400000).toISOString();const session=await db.prepare(`INSERT INTO coach_sessions(id,coach_id,email,token_hash,expires_at,created_at)
  SELECT ?,id,email,?,CASE WHEN id=? AND review_token_hash IS NOT NULL THEN datetime(reviewed_at,'+72 hours') ELSE ? END,datetime('now')
  FROM coach_access_requests WHERE id=? AND status='approved' AND ${beforeExpiry} RETURNING id`).bind(id,hash,passId,expires,coachId).first();
  if(!session)return json({success:false,error:'Coach access has expired or changed.'},403);const r=json(data);r.headers.append('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30*86400}`);return r}
 async function schema(db){await ensureCoachCore(db);await db.prepare('CREATE TABLE IF NOT EXISTS coach_auth_limits(key TEXT PRIMARY KEY,count INTEGER NOT NULL)').run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_login_otps (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,code_hash TEXT NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_sessions (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();for(const q of [`ALTER TABLE coach_access_requests ADD COLUMN password_hash TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_salt TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_iterations INTEGER`,`ALTER TABLE coach_access_requests ADD COLUMN team_name TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN team_code TEXT`])try{await db.prepare(q).run()}catch{}}
-async function passwordHash(password,saltHex,iterations){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']),salt=new Uint8Array(saltHex.match(/.{2}/g).map(x=>parseInt(x,16))),bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations},key,256);return hex(new Uint8Array(bits))}
+export async function passwordHash(password,saltHex,iterations){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']),salt=new Uint8Array(saltHex.match(/.{2}/g).map(x=>parseInt(x,16))),bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations},key,256);return hex(new Uint8Array(bits))}
 async function sha256(v){return hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(v))))) }
 function randomHex(n){return hex(crypto.getRandomValues(new Uint8Array(n)))}function hex(b){return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}function constant(a,b){if(a.length!==b.length)return false;let x=0;for(let i=0;i<a.length;i++)x|=a.charCodeAt(i)^b.charCodeAt(i);return x===0}function cookie(r,n){const m=(r.headers.get('Cookie')||'').match(new RegExp('(?:^|;\\s*)'+n+'=([^;]+)'));return m?decodeURIComponent(m[1]):''}function clean(v,m=500){return String(v||'').trim().slice(0,m)}function esc(v){return String(v||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}})}
 function ownerSignIn(email){return email==='howdy@kanabsports.com'?json({success:false,error:'Howdy uses the Owner Console. Sign in there with your saved owner password.',redirect:'/admin.html'},409):null}
