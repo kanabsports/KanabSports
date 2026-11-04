@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {db,sqlite,env,tokens} from './private-messages.test.mjs';
 import {onRequest as audiences} from '../functions/api/pep-audiences.js';
 import {onRequest as coachMessages} from '../functions/api/coach-messages.js';
+import {onRequest as setupTravel} from '../functions/api/travel-messaging-setup.js';
 import {onRequest as admin} from '../functions/api/school-admin.js';
 import {onRequestPost as student} from '../functions/api/student-pep-access.js';
 import {sha256} from '../functions/_lib/coach-auth.js';
@@ -40,6 +41,17 @@ r=await call(coachMessages,setup,staff);assert.equal(r.data.messages.filter(m=>m
 await authenticate(new Request(root),db);
 sqlite.prepare("INSERT INTO admin_sessions(id,email,token_hash,expires_at) VALUES('audience-admin','howdy@kanabsports.com',?,datetime('now','+1 hour'))").run(await sha256('audience-admin-token'));
 const adminCookie='ks_admin=audience-admin-token',adminPath='/api/school-admin';
+const setupPath='/api/travel-messaging-setup';
+const grant={action:'enroll',confirmed:true,evidence:'Fictional club assignment',team_code:'TRAVEL-B',coach_id:'coachB'};
+assert.equal((await call(setupTravel,setupPath,staff,grant)).status,401);
+assert.equal((await call(setupTravel,setupPath,adminCookie,{...grant,team_code:'SCHOOL',coach_id:'schoolCoach'})).status,403);
+assert.equal((await call(setupTravel,setupPath,adminCookie,{...grant,action:'remove'})).status,200);
+assert.equal((await call(setupTravel,setupPath,adminCookie,grant,{...cfg,PRIVATE_MESSAGING_ENABLED:'false'})).status,200);
+const staged=await call(setupTravel,setupPath,adminCookie,null,{...cfg,PRIVATE_MESSAGING_ENABLED:'false'});
+assert.equal(staged.data.online,false);assert.equal(staged.data.coaches.find(c=>c.id==='coachB').enrolled,1);
+sqlite.exec("UPDATE private_message_teams SET enabled=0 WHERE team_code='TRAVEL-B'");
+assert.equal((await call(setupTravel,setupPath,adminCookie,grant)).status,409);
+assert.equal(sqlite.prepare("SELECT enabled FROM private_message_teams WHERE team_code='TRAVEL-B'").get().enabled,0);
 const enrollment={action:'enroll_athlete',confirmed:true,team_code:'REC-A',guardian:'parenta@example.test',student_ref:'fictional-child-1',athlete_email:'athlete@example.test',evidence:'Fictional program approval reference',verified_teen:true,expires:new Date(Date.now()+86400000*30).toISOString().slice(0,10)};
 // Existing test fixture used a mixed-case guardian; real signup normalizes email.
 sqlite.exec("UPDATE guardian_memberships SET email='parenta@example.test' WHERE id='parentA'; UPDATE parent_sessions SET email='parenta@example.test' WHERE email='parentA@example.test'; UPDATE parent_accounts SET email='parenta@example.test' WHERE email='parentA@example.test'");
