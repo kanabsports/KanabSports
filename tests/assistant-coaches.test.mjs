@@ -15,12 +15,13 @@ const db={prepare(sql){const st=sqlite.prepare(sql);let args=[];return {
 },async batch(statements){sqlite.exec('SAVEPOINT d1_batch');try{const rows=await Promise.all(statements.map(s=>s.run()));sqlite.exec('RELEASE d1_batch');return rows}catch(e){sqlite.exec('ROLLBACK TO d1_batch; RELEASE d1_batch');throw e}}};
 const origin='https://kanabsports.com',env={SPORTS_DB:db,RESEND_API_KEY:'fixture'};
 await ensureCoachCore(db);await assistantCoachSchema(db);
-for(const [id,code,role,kind] of [[passId,'TEAM-A','Head Coach','travel'],['other','TEAM-B','Head Coach','travel'],['school','TEAM-C','Head Coach','school'],['existing-assistant','TEAM-A','Assistant Coach','travel']]) {
+for(const [id,code,role,kind] of [[passId,'TEAM-A','Head Coach','travel'],['other','TEAM-B','Head Coach','travel'],['school','TEAM-C','Head Coach','school'],['rec','TEAM-D','Coach','rec'],['legacy',null,'Coach',null],['pending','TEAM-P','Coach','rec'],['existing-assistant','TEAM-A','Assistant Coach','travel']]) {
   sqlite.prepare(`INSERT INTO coach_access_requests(id,name,email,organization,sport,role,status,team_name,team_code,reviewed_at,review_token_hash)
     VALUES(?,?,?,'Travel','Basketball',?,'approved',?,?,datetime('now'),?)`).run(id,id,id+'@example.test',role,code,code,id===passId?'owner-pending':null);
-  sqlite.prepare("INSERT OR IGNORE INTO school_teams(team_code,kind,evidence,assigned_by) VALUES(?,?,'fixture','fixture')").run(code,kind);
+  if(kind)sqlite.prepare("INSERT OR IGNORE INTO school_teams(team_code,kind,evidence,assigned_by) VALUES(?,?,'fixture','fixture')").run(code,kind);
   sqlite.prepare("INSERT INTO coach_sessions(id,coach_id,email,token_hash,expires_at) VALUES(?,?,?, ?,datetime('now','+1 day'))").run(id,id,id+'@example.test',await sha256(id));
 }
+sqlite.prepare("UPDATE coach_access_requests SET status='pending' WHERE id='pending'").run();
 const mail=[];let sendFails=false;
 globalThis.fetch=async(url,options)=>{assert.equal(url,'https://api.resend.com/emails');mail.push(JSON.parse(options.body));return sendFails?Response.json({name:'validation_error'},{status:400}):Response.json({id:'fixture-'+mail.length})};
 function request(path,body,cookie=passId,site=origin){return new Request(origin+path,{method:body?'POST':'GET',headers:{Origin:site,'Content-Type':'application/json',cookie:'ks_coach='+cookie},body:body?JSON.stringify(body):undefined})}
@@ -32,7 +33,7 @@ const password='a fixture password';
 const auth=(body)=>account({env,request:request('/api/coach-account',body,'')});
 assert.equal((await call(undefined,'unknown')).status,401);
 assert.equal((await call(invite,'existing-assistant')).status,403);
-assert.equal((await call(invite,'school')).status,403);
+assert.equal((await call(invite,'pending')).status,401);
 assert.equal((await call(invite,passId,'https://unrelated.example')).status,403);
 assert.equal((await call({...invite,email:'bad'})).status,400);
 let response=await call(invite);assert.equal(response.status,200,await response.clone().text());
@@ -87,4 +88,24 @@ assert.equal((await call({action:'accept',token:newToken,password},'')).status,4
 assert.equal((await call({...invite,email:'blocked@example.test'})).status,200);const blocked=latestToken();
 sqlite.prepare("UPDATE coach_access_requests SET status='rejected' WHERE id=?").run(passId);
 assert.equal((await call({action:'accept',token:blocked,password},'')).status,410);
-console.log('PASS assistant invitation, mailbox link, exact team/role, existing coach login, announcements, score submission, resend, expiry, rejection and immediate revocation. All email mocked; all data fictional.');
+// Every approved Coach or Head Coach can invite, including legacy accounts with no code or classification.
+for(const sponsor of ['school','rec','legacy']) {
+  const email=sponsor+'-assistant@example.test';
+  response=await call({...invite,email},sponsor);
+  assert.equal(response.status,200,await response.clone().text());
+  const invited=latestInvite(),invitationToken=latestToken();
+  const sponsorCode=sqlite.prepare('SELECT team_code FROM coach_access_requests WHERE id=?').get(sponsor).team_code;
+  assert(sponsorCode);assert.equal(invited.team_code,sponsorCode);
+  response=await call({action:'accept',token:invitationToken,password},'');
+  assert.equal(response.status,200,await response.clone().text());
+  const joined=await response.json(),joinedCookie=response.headers.get('set-cookie').match(/ks_coach=([^;]+)/)[1];
+  const member=sqlite.prepare('SELECT * FROM coach_access_requests WHERE id=?').get(joined.coachId);
+  assert.equal(member.team_code,sponsorCode);assert.equal(member.role,'Assistant Coach');
+  assert.equal((await call({...invite,email:'further-'+email},joinedCookie)).status,403);
+  const posted=await announcements({env,request:request('/api/coach-messages',{action:'post',body:'A sample team update.'},joinedCookie)});
+  assert.equal(posted.status,sponsor==='rec'?200:403,await posted.clone().text());
+  if(sponsor==='legacy')assert.equal(sqlite.prepare('SELECT * FROM school_teams WHERE team_code=?').get(sponsorCode),undefined);
+  assert.equal((await call({action:'revoke',id:invited.id},sponsor)).status,200);
+  assert.equal(await getCoach(request('/api/coach-profile',null,joinedCookie),db),null);
+}
+console.log('PASS invitations for all approved Coach/Head Coach roles, school/rec/travel/legacy teams, retained school messaging approval, mailbox link, exact team/role, existing coach login, announcements, score submission, resend, expiry, rejection and immediate revocation. All email mocked; all data fictional.');

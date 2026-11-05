@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Assistant Coach Invitation Demo · Kanab Sports</title>
+  <link rel="apple-touch-icon" href="/assets/ks-home-180.png">
+  <style>
+    :root{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#151719;background:#f4f5f3}
+    *{box-sizing:border-box}body{margin:0}a{color:inherit}header{background:#0b0c0f;color:white;padding:20px}header div,main{width:min(680px,100%);margin:auto}.brand{font-weight:900;text-decoration:none;font-size:23px}.brand span{color:#e32636}main{padding:32px 20px 60px}.back{font-size:14px;color:#555}h1{font-size:clamp(32px,7vw,44px);letter-spacing:-1.4px;margin:20px 0 8px}h2{font-size:21px;margin:0 0 14px}p{line-height:1.55}.muted{color:#656a70}section,.card{background:white;border:1px solid #dde0e2;border-radius:18px;padding:22px;margin:22px 0}.field{display:block;font-weight:700;margin:18px 0 7px}input{width:100%;font:inherit;padding:14px;border:1px solid #bfc4ca;border-radius:10px}button,.button{display:inline-block;font:inherit;font-weight:750;padding:13px 17px;border-radius:10px;border:0;background:#e32636;color:white;text-decoration:none;cursor:pointer;min-height:46px}button:disabled{opacity:.55;cursor:wait}.secondary{background:#edf0f2;color:#222}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.status{min-height:24px;color:#555;line-height:1.5;overflow-wrap:anywhere}.person{padding:18px 0;border-top:1px solid #e3e5e7}.person:first-child{border-top:0}.person strong{display:block;font-size:17px}.person p{margin:5px 0;overflow-wrap:anywhere}.badge{display:inline-block;margin:7px 0;color:#4d5962;font-size:13px;background:#edf0f2;padding:5px 9px;border-radius:20px}[hidden]{display:none!important}:focus-visible{outline:3px solid #447acb;outline-offset:3px}footer{color:#74777b;text-align:center;font-size:13px;margin-top:30px}
+  </style>
+
+</head>
+<body>
+  <header><div><a class="brand" href="/pep/">KANAB <span>SPORTS</span></a></div></header>
+  <main>
+    <a class="back" href="/pep/">← Pep demo</a>
+    <p class="muted" style="font-size:12px;font-weight:750;letter-spacing:.08em;margin:22px 0 8px">FICTIONAL DEMO · CANYON STARS</p>
+    <div class="actions" role="group" aria-label="Choose the preview">
+      <button type="button" id="coachView" aria-pressed="true">Coach view</button>
+      <button type="button" id="assistantView" class="secondary" aria-pressed="false">Assistant view</button>
+    </div>
+    <h1 id="title">Your coaching team</h1>
+    <p class="muted" id="intro">Canyon Stars · Girls basketball</p>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+    <a id="signIn" class="button" href="/coach-account.html" hidden>Coach sign in</a>
+    <div id="management">
+      <section>
+        <h2>Invite an assistant coach</h2>
+        <p class="muted">They’ll join this team with access to schedules, coach announcements and score tools. You can remove their access here at any time.</p>
+        <form id="inviteForm">
+          <label class="field" for="name">Coach’s name</label>
+          <input id="name" name="name" autocomplete="name" maxlength="120" value="Jordan Taylor" readonly required>
+          <label class="field" for="email">Email address</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="180" value="jordan@example.test" readonly required>
+          <div class="actions"><button type="submit">Preview invitation</button></div>
+        </form>
+      </section>
+      <section><h2>Assistant coaches</h2><div id="invites"><p class="muted">Try the sample invitation to see the next step.</p></div></section>
+      <p class="muted">Need help reporting scores? <a href="/pep/">Invite a score assistant</a>.</p>
+    </div>
+    <section id="acceptance" hidden>
+      <h2>Welcome to the team</h2>
+      <p id="invitedPerson">Jordan Taylor · jordan@example.test</p>
+      <form id="acceptForm">
+        <label class="field" for="newPassword">Choose your coach password</label>
+        <input id="newPassword" value="sample-password" readonly type="password" autocomplete="new-password" minlength="10" maxlength="200" aria-describedby="passwordHint" required>
+        <p id="passwordHint" class="muted">In the live invitation, the assistant chooses a password with at least 10 characters. This demo uses a sample password.</p>
+        <div class="actions"><button type="submit">Preview joining the team</button></div>
+      </form>
+    </section>
+    <p class="muted" style="font-size:13px">Sample names and a fictional team. Buttons simulate the invitation.</p>
+    <footer>Kanab Sports · powered by <strong>pep</strong></footer>
+  </main>
+<script>
+const $=id=>document.getElementById(id);
+function show(view){
+  const assistant=view==='assistant';
+  $('management').hidden=assistant;$('acceptance').hidden=!assistant;
+  $('title').textContent=assistant?'You’re invited to coach':'Your coaching team';
+  $('intro').textContent=assistant?'Coach Morgan Wells invited you to Canyon Stars · Girls basketball':'Canyon Stars · Girls basketball';
+  $('coachView').classList.toggle('secondary',assistant);$('assistantView').classList.toggle('secondary',!assistant);
+  $('coachView').setAttribute('aria-pressed',String(!assistant));$('assistantView').setAttribute('aria-pressed',String(assistant));
+  $('status').textContent='';history.replaceState(null,'',assistant?'#assistant':'#coach');
+}
+$('coachView').onclick=()=>show('coach');$('assistantView').onclick=()=>show('assistant');
+$('inviteForm').onsubmit=event=>{
+  event.preventDefault();
+  $('invites').innerHTML='<article class="person"><strong>Jordan Taylor</strong><p class="muted">jordan@example.test</p><span class="badge">Invited</span></article>';
+  show('assistant');$('status').textContent='Invitation preview. This is the page Jordan opens from the email.';
+};
+$('acceptForm').onsubmit=event=>{
+  event.preventDefault();
+  $('invites').innerHTML='<article class="person"><strong>Jordan Taylor</strong><p class="muted">jordan@example.test</p><span class="badge">Joined · Assistant Coach</span></article>';
+  show('coach');$('status').textContent='Demo complete. Jordan has joined Canyon Stars as an Assistant Coach.';
+};
+show(location.hash==='#assistant'?'assistant':'coach');
+</script>
+</body>
+</html>
