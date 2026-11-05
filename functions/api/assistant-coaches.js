@@ -1,12 +1,11 @@
 import {getCoach,canManageAssistants,ensureCoachCore,sha256,randomToken,clean,validEmail,json} from '../_lib/coach-auth.js';
 import {assistantCoachSchema,activeSponsor,syncAssistantAccess} from '../_lib/assistant-coaches.js';
-import {teamPolicy} from '../_lib/school-access.js';
+import {ensureTeamCode} from './coach-messages.js';
 import {sendEmail} from '../_lib/score-invitations.js';
 import {passwordHash,makeSession} from './coach-account.js';
 
 const invitationFrom=`FROM coach_assistant_invites i
-  JOIN coach_access_requests s ON s.id=i.sponsor_id
-  JOIN school_teams t ON t.team_code=i.team_code`;
+  JOIN coach_access_requests s ON s.id=i.sponsor_id`;
 
 export async function onRequest({request,env}) {
   const db=env.SPORTS_DB;
@@ -26,10 +25,9 @@ export async function onRequest({request,env}) {
     }
     const coach=await getCoach(request,db);
     if(!coach)return json({error:'Sign in with your coach account first.'},401);
-    const policy=await teamPolicy(db,coach.team_code);
-    const canInvite=canManageAssistants(coach)&&/^(head coach|coach)$/i.test(coach.role)
-      &&policy?.kind==='travel'&&!policy.school_id;
-    if(!canInvite)return json({error:'Assistant invitations are available to lead coaches of approved travel teams.'},403);
+    const canInvite=canManageAssistants(coach)&&/^(head coach|coach)$/i.test(coach.role);
+    if(!canInvite)return json({error:'Only approved Coaches and Head Coaches can invite assistant coaches.'},403);
+    coach.team_code=await ensureTeamCode(db,coach);
     if(request.method==='GET') {
       const invites=(await db.prepare(`SELECT id,name,email,status,expires_at,last_error,created_at
         FROM coach_assistant_invites WHERE sponsor_id=? AND team_code=? ORDER BY created_at DESC`).bind(coach.id,coach.team_code).all()).results;

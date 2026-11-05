@@ -19,10 +19,10 @@ export async function assistantCoachSchema(db) {
     WHERE status='sending' AND datetime(updated_at)<datetime('now','-5 minutes')`).run();
 }
 
-// Every grant stays attached to the inviting coach and the same travel team.
+// Every grant stays attached to the inviting coach and the same team.
 export function activeSponsor() {
   return `s.status='approved' AND lower(s.role) IN ('head coach','coach')
-    AND s.team_code=i.team_code AND t.kind='travel' AND t.school_id IS NULL
+    AND s.team_code=i.team_code
     AND (s.id<>'${passId}' OR s.review_token_hash IS NULL
       OR datetime(s.reviewed_at,'+72 hours')>datetime('now'))`;
 }
@@ -32,7 +32,6 @@ export async function syncAssistantAccess(db) {
   if(!exists)return;
   const allowed=`SELECT 1 FROM coach_assistant_invites i
     JOIN coach_access_requests s ON s.id=i.sponsor_id
-    JOIN school_teams t ON t.team_code=i.team_code
     WHERE i.accepted_coach_id=coach_access_requests.id AND i.status='accepted'
       AND i.team_code=coach_access_requests.team_code AND ${activeSponsor()}`;
   // Explicit owner rejections remain rejected. Only sponsor pauses can resume.

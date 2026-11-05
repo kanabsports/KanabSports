@@ -68,7 +68,7 @@ export async function onRequest({request,env}){
   }
 }
 
-async function ensureTeamCode(db,coach){
+export async function ensureTeamCode(db,coach){
   if(coach.team_code)return coach.team_code;
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   for(let n=0;n<12;n++){
