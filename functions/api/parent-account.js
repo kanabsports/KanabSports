@@ -1,3 +1,4 @@
+import {registerReview,DEVICE_SECONDS} from '../_lib/session-review.js';
 import {connectApproved} from '../_lib/family-onboarding.js';
 const COOKIE='__Host-ks_parent';
 const ORIGIN='https://kanabsports.com';
@@ -6,7 +7,7 @@ const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toSt
 const hash=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',encode.encode(value))),b=>b.toString(16).padStart(2,'0')).join('');
 async function pinHash(pin,salt){const key=await crypto.subtle.importKey('raw',encode.encode(pin),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:encode.encode(salt),iterations:100000,hash:'SHA-256'},key,256);return Array.from(new Uint8Array(bits),b=>b.toString(16).padStart(2,'0')).join('')}
 function equalHash(a,b){if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0}
-function signedResponse(token){const r=json({success:true});r.headers.set('Set-Cookie',`${COOKIE}=${token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=2592000`);return r}
+function signedResponse(token){const r=json({success:true});r.headers.set('Set-Cookie',`${COOKIE}=${token}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=${DEVICE_SECONDS}`);return r}
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}})}
 async function schema(db){for(const sql of[
  'CREATE TABLE IF NOT EXISTS parent_challenges (id TEXT PRIMARY KEY,email TEXT NOT NULL,name TEXT NOT NULL,hash TEXT NOT NULL,expires INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0)',
@@ -46,8 +47,8 @@ export async function onRequest({request,env}){
    const candidate=await pinHash(pin,row?.salt||'kanab-parent-missing-account-salt');
    if(!row||!equalHash(candidate,row.hash))return json({error:'Email or PIN not recognized. Try again, or choose Set / reset PIN to verify your email.'},403);
    const token=random();
-   await db.batch([db.prepare('INSERT INTO parent_sessions (hash,email,expires) VALUES (?,?,?)').bind(await hash(token),email,now+30*86400000),db.prepare('UPDATE parent_accounts SET last_seen=? WHERE email=?').bind(now,email),db.prepare('DELETE FROM parent_sessions WHERE expires<?').bind(now)]);
-   return signedResponse(token);
+   await db.batch([db.prepare('INSERT INTO parent_sessions (hash,email,expires) VALUES (?,?,?)').bind(await hash(token),email,now+DEVICE_SECONDS*1000),db.prepare('UPDATE parent_accounts SET last_seen=? WHERE email=?').bind(now,email),db.prepare('DELETE FROM parent_sessions WHERE expires<?').bind(now)]);
+   await registerReview(db,'parent',await hash(token));return signedResponse(token);
   }
   if(body.action==='request_code'){
    if(!env.RESEND_API_KEY)return json({error:'Email verification is temporarily unavailable. If you already have a PIN, use Sign In.'},503);
@@ -78,12 +79,12 @@ export async function onRequest({request,env}){
      db.prepare('INSERT INTO parent_pins (email,salt,hash,updated) VALUES (?,?,?,?) ON CONFLICT(email) DO UPDATE SET salt=excluded.salt,hash=excluded.hash,updated=excluded.updated').bind(consumed.email,salt,pinDigest,now),
      db.prepare('DELETE FROM parent_challenges WHERE email=?').bind(consumed.email)
     ]:[]),
-    db.prepare('INSERT INTO parent_sessions (hash,email,expires) VALUES (?,?,?)').bind(await hash(token),consumed.email,now+30*86400000),
+    db.prepare('INSERT INTO parent_sessions (hash,email,expires) VALUES (?,?,?)').bind(await hash(token),consumed.email,now+DEVICE_SECONDS*1000),
     db.prepare('INSERT INTO parent_accounts (email,name,created,last_seen) VALUES (?,?,?,?) ON CONFLICT(email) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen').bind(consumed.email,consumed.name,now,now),
     db.prepare('DELETE FROM parent_sessions WHERE expires<?').bind(now),
     db.prepare('DELETE FROM parent_challenges WHERE expires<?').bind(now)
    ]);
-   return signedResponse(token);
+   await registerReview(db,'parent',await hash(token));return signedResponse(token);
   }
   const ses=await session(request,db);if(!ses)return json({error:'Please sign in again.'},401);
   if(body.action==='connect_approved'){

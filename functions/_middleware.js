@@ -1,9 +1,19 @@
+import {pendingReviews,reviewRequired,injectReview} from './_lib/session-review.js';
 import {demoRole,roles,owner,demoApi,decorateDemo} from './_lib/owner-demo.js';
 import {syncAssistantAccess} from './_lib/assistant-coaches.js';
 import {expirePass} from './_lib/travel-pass.js';
 import {removeBullsharksTest} from './_migrations/remove-bullsharks-test.js';
 export async function onRequest(context) {
   const url0=new URL(context.request.url);
+  if(url0.pathname==='/api/session-review')return context.next();
+  if(context.env.SPORTS_DB && url0.pathname.startsWith('/api/')){
+    let authAction=false;
+    if(url0.pathname==='/api/admin-auth')authAction=true;
+    if(['/api/coach-account','/api/parent-account'].includes(url0.pathname)&&context.request.method==='POST'){
+      try{const b=await context.request.clone().json();authAction=['login','logout','request_otp','verify_otp','set_password','request_code','verify'].includes(b.action);}catch{}
+    }
+    if(!authAction && (await pendingReviews(context.request,context.env.SPORTS_DB)).length)return reviewRequired();
+  }
   if(url0.pathname==='/api/owner-demo')return context.next();
   const preview=demoRole(context.request);
   if(preview && !['/api/owner-demo','/api/admin-auth'].includes(url0.pathname)){
@@ -18,7 +28,7 @@ export async function onRequest(context) {
     const response=await context.next();
     if(!(response.headers.get('Content-Type')||'').includes('text/html'))return response;
     const headers=new Headers(response.headers);headers.delete('Content-Length');headers.set('Cache-Control','private, no-store');headers.set('Content-Security-Policy',"form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'self'");
-    return new Response(decorateDemo(await response.text(),preview),{status:response.status,headers});
+    return new Response(injectReview(decorateDemo(await response.text(),preview)),{status:response.status,headers});
   }
   if(context.env.SPORTS_DB && (url0.pathname.startsWith('/api/') || ['/coach-access-review','/review','/coach-register'].includes(url0.pathname))){await expirePass(context.env.SPORTS_DB);await syncAssistantAccess(context.env.SPORTS_DB);}
   let cleanupRows=null;
@@ -31,6 +41,7 @@ export async function onRequest(context) {
     const headers=new Headers(response.headers);
     headers.set('Cache-Control','private, no-store, max-age=0');
     headers.set('X-Owner-Console-Version','2026-10-07-owner-pwa-v1');
+    if((headers.get('Content-Type')||'').includes('text/html')){headers.delete('Content-Length');return new Response(injectReview(await response.text()),{status:response.status,headers});}
     return new Response(response.body,{status:response.status,statusText:response.statusText,headers});
   }
   let response = await context.next();
@@ -38,7 +49,7 @@ export async function onRequest(context) {
   const url = new URL(context.request.url);
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('text/html')) return response;
-  let html = await response.text();
+  let html = injectReview(await response.text());
 
   html = html.replace('</head>', `<style id="coachesNavHighlight">.links a[href="/coaches.html"],.mobile-menu a[href="/coaches.html"]{color:#e32636!important}.links a[href="/coaches.html"]:hover,.mobile-menu a[href="/coaches.html"]:hover{color:#ff5361!important}</style>\n</head>`);
 

@@ -28,7 +28,10 @@ export async function onRequestPost({request,env}){
     if(action==='set_password'){
       const password=String(body.password||'');if(password.length<12)return json({success:false,error:'Use at least 12 characters.'},400);if(password.length>200)return json({success:false,error:'That password is too long.'},400);
       const saltBytes=crypto.getRandomValues(new Uint8Array(16)),salt=Array.from(saltBytes,b=>b.toString(16).padStart(2,'0')).join(''),iterations=50000,hash=await passwordHash(password,salt,iterations);
-      await env.SPORTS_DB.prepare(`INSERT INTO admin_users (email,password_hash,password_salt,password_iterations,updated_at) VALUES (?,?,?,?,datetime('now')) ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash,password_salt=excluded.password_salt,password_iterations=excluded.password_iterations,updated_at=datetime('now')`).bind(OWNER_EMAIL,hash,salt,iterations).run();return json({success:true});
+      await env.SPORTS_DB.prepare(`INSERT INTO admin_users (email,password_hash,password_salt,password_iterations,updated_at) VALUES (?,?,?,?,datetime('now')) ON CONFLICT(email) DO UPDATE SET password_hash=excluded.password_hash,password_salt=excluded.password_salt,password_iterations=excluded.password_iterations,updated_at=datetime('now')`).bind(OWNER_EMAIL,hash,salt,iterations).run();
+      const current=(request.headers.get('Cookie')||'').match(/(?:^|;\s*)ks_admin=([^;]+)/)?.[1];
+      if(current)await env.SPORTS_DB.prepare('DELETE FROM admin_sessions WHERE email=? AND token_hash<>?').bind(OWNER_EMAIL,await sha256(decodeURIComponent(current))).run();
+      return json({success:true});
     }
     if(action==='save_registration'){
       const title=clean(body.title,160),sport=clean(body.sport,100),ages=clean(body.ages,100),price=clean(body.price,80),deadline=clean(body.deadline,40),seasonDates=clean(body.season_dates,160),status=clean(body.status,40),url=cleanUrl(body.registration_url);if(!title||!sport||!status)return json({success:false,error:'Title, sport, and status are required.'},400);
