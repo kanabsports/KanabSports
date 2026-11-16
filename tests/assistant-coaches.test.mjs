@@ -109,3 +109,15 @@ for(const sponsor of ['school','rec','legacy']) {
   assert.equal(await getCoach(request('/api/coach-profile',null,joinedCookie),db),null);
 }
 console.log('PASS invitations for all approved Coach/Head Coach roles, school/rec/travel/legacy teams, retained school messaging approval, mailbox link, exact team/role, existing coach login, announcements, score submission, resend, expiry, rejection and immediate revocation. All email mocked; all data fictional.');
+
+// Invite details remain available independently of messaging approval.
+const {onRequestGet:profile}=await import('../functions/api/coach-profile.js');
+for(const id of ['school','existing-assistant']){
+ const response=await profile({env,request:request('/api/coach-profile',undefined,id)});
+ const data=await response.json();
+ assert.equal(data.signedIn,true);
+ assert.equal(data.coach.name,id);
+ assert.equal(data.coach.teamCode,id==='school'?'TEAM-C':'TEAM-A');
+}
+assert.equal((await (await profile({env,request:request('/api/coach-profile',undefined,'pending')})).json()).signedIn,false);
+console.log('PASS team invite profile for school and assistant coaches; pending access denied.');
