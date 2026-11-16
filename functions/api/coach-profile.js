@@ -1,3 +1,4 @@
+import {ensureTeamCode} from './coach-messages.js';
 import {getCoach,ensureCoachCore,json} from '../_lib/coach-auth.js';
 
 export async function onRequestGet({request,env}){
@@ -11,6 +12,7 @@ export async function onRequestGet({request,env}){
       coach:{
         id:coach.id,
         name:coach.name,
+        teamCode:await ensureTeamCode(env.SPORTS_DB,coach),
         email:coach.email,
         phone:coach.phone||'',
         organization:coach.organization,
