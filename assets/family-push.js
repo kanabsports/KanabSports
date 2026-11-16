@@ -4,6 +4,7 @@ const token=()=>{let t=localStorage.getItem(key);if(!t){t=Array.from(crypto.getR
 async function api(body){const r=await fetch('/api/push',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Notifications unavailable.');return d;}
 const bytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 export function mountPush(host,getCodes){
+ if(window.pepOwnerDemo){host.textContent='Demo mode: device notifications are disabled.';return;}
  host.innerHTML='<details><summary style="font-weight:900;cursor:pointer;min-height:44px">App notifications</summary><p class="note" id="pushHelp">Add My Family to your Home Screen using your browser’s Share or Install menu. Get coach messages and important team updates for the teams saved in My Family. SMS is separate and completely optional.</p><p id="pushState" class="note" role="status">Checking this device…</p><div class="team-actions"><button class="btn primary small" id="pushEnable" hidden>Turn On Notifications</button><button class="btn ghost small" id="pushTest" hidden>Send this device a test</button><button class="btn ghost small" id="pushDisable" hidden>Turn off</button></div></details>';
  const panel=notificationPanel(host,{portal:'family',title:'App notifications',bottom:document.getElementById('pane-settings')});
  const $=id=>host.querySelector('#'+id),state=$('pushState');let registration,config,sub,busy=false;

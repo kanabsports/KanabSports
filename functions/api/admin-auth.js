@@ -1,4 +1,4 @@
-const OWNER_EMAIL='howdy@kanabsports.com',SESSION_SECONDS=14*60*60,PBKDF2_ITERATIONS=50000;
+const OWNER_EMAIL='howdy@kanabsports.com',SESSION_SECONDS=30*24*60*60,PBKDF2_ITERATIONS=50000;
 
 export async function onRequestGet({request,env}){
   if(!env.SPORTS_DB)return page('Admin sign-in is not connected.',503);
@@ -17,7 +17,13 @@ export async function onRequestPost({request,env}){
   try{
     if(!env.SPORTS_DB||!env.RESEND_API_KEY||!env.TURNSTILE_SECRET_KEY)return json({success:false,error:'Admin sign-in is not configured yet.'},503);
     const form=await request.formData(),action=clean(form.get('action'),40);
-    if(action==='logout')return new Response(JSON.stringify({success:true}),{headers:{'Content-Type':'application/json','Set-Cookie':'ks_admin=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0','Cache-Control':'no-store'}});
+    if(action==='logout'){
+      if(request.headers.get('Origin')!==new URL(request.url).origin)return json({error:'Open your owner console to sign out.'},403);
+      await schema(env.SPORTS_DB);
+      const token=(request.headers.get('Cookie')||'').match(/(?:^|;\s*)ks_admin=([^;]+)/)?.[1];
+      if(token)await env.SPORTS_DB.prepare('DELETE FROM admin_sessions WHERE token_hash=?').bind(await sha256(decodeURIComponent(token))).run();
+      const response=new Response(JSON.stringify({success:true}),{headers:{'Content-Type':'application/json','Set-Cookie':'ks_admin=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0','Cache-Control':'no-store'}});response.headers.append('Set-Cookie','ks_owner_demo=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0');return response;
+    }
     if(clean(form.get('website'),100))return json({success:true});
     const email=clean(form.get('email'),180).toLowerCase(),turnstile=clean(form.get('cf-turnstile-response'),3000);
     if(email!==OWNER_EMAIL)return json({success:true,message:'If this address is authorized, a sign-in link will arrive shortly.'});
