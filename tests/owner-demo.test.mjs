@@ -16,8 +16,8 @@ let calls=0;globalThis.fetch=async()=>{calls++;throw Error('No outbound requests
 assert.equal((await control({request:req('/api/owner-demo',{body:{role:'head'},token:'bad'}),env})).status,401);
 assert.equal((await control({request:req('/api/owner-demo',{body:{role:'head'},originHeader:'https://evil.test'}),env})).status,403);
 const start=await control({request:req('/api/owner-demo',{body:{role:'head'}}),env});assert.match(start.headers.get('Set-Cookie'),/HttpOnly; Secure; SameSite=Strict/);
-const remembered=await control({request:req('/api/owner-demo',{body:{action:'remember'}}),env});assert.match(remembered.headers.get('Set-Cookie'),/Max-Age=2592000/);
-assert.ok(Date.parse(sql.prepare('SELECT expires_at FROM admin_sessions').get().expires_at)>Date.now()+29*86400000);
+const remembered=await control({request:req('/api/owner-demo',{body:{action:'remember'}}),env});assert.equal(remembered.headers.get('Set-Cookie'),null);
+assert.ok(Date.parse(sql.prepare('SELECT expires_at FROM admin_sessions').get().expires_at)<Date.now()+2*3600000);
 const call=async(path,role='head',body)=>demoApi(req('/api/'+path,{body}),env,role);
 const head=await (await call('coach-profile')).json(),assistant=await (await call('coach-profile','assistant')).json();
 assert.equal(head.coach.teamCode,assistant.coach.teamCode);assert.equal(assistant.coach.role,'Assistant Coach');assert.equal(assistant.coach.canManageAssistants,false);
@@ -39,9 +39,9 @@ assert.equal(demoRole(stale),'head');assert.equal((await middleware({request:sta
 assert.match(decorateDemo('<html><head><script>app()</script></head></html>','head'),/<head><script src="\/assets\/owner-demo.js" data-role="head"><\/script><script>app/);
 await control({request:req('/api/owner-demo',{body:{action:'reset'}}),env});team=await (await demoApi(req('/api/team-connection?code=KS-DEMO'),env,'parent')).json();assert.equal(team.team.messages.length,1);
 assert.equal(calls,0);
-assert.deepEqual(sql.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(x=>x.name),['admin_sessions','admin_users','owner_demo_state']);
+assert.deepEqual(sql.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(x=>x.name),['admin_sessions','admin_users','owner_demo_state','session_reviews']);
 const exit=await control({request:req('/api/owner-demo',{body:{action:'exit'}}),env});assert.match(exit.headers.get('Set-Cookie'),/Max-Age=0/);
 const logout=new Request(origin+'/api/admin-auth',{method:'POST',headers:{Origin:origin,Cookie:'ks_admin=owner-session'},body:new URLSearchParams({action:'logout'})});
 assert.equal((await auth({request:logout,env})).status,200);assert.equal(sql.prepare('SELECT count(*) n FROM admin_sessions').get().n,0);
 assert.equal((await demoApi(req('/api/coach-profile'),env,'head')).status,401);
-console.log('PASS owner demo authentication, roles, real-route isolation, stale tabs, persistence, reset, 30-day session and logout revocation; no outbound requests or production team tables.');
+console.log('PASS owner demo authentication, roles, real-route isolation, stale tabs, persistence, reset, no silent session extension and logout revocation; no outbound requests or production team tables.');

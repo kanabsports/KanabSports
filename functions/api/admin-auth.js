@@ -1,4 +1,5 @@
-const OWNER_EMAIL='howdy@kanabsports.com',SESSION_SECONDS=30*24*60*60,PBKDF2_ITERATIONS=50000;
+import {registerReview,DEVICE_SECONDS} from '../_lib/session-review.js';
+const OWNER_EMAIL='howdy@kanabsports.com',SESSION_SECONDS=DEVICE_SECONDS,PBKDF2_ITERATIONS=50000;
 
 export async function onRequestGet({request,env}){
   if(!env.SPORTS_DB)return page('Admin sign-in is not connected.',503);
@@ -10,6 +11,7 @@ export async function onRequestGet({request,env}){
   if(!reserved.meta?.changes)return page('This sign-in link has already been used.',409);
   const session=randomToken(),sessionHash=await sha256(session),expires=new Date(Date.now()+SESSION_SECONDS*1000).toISOString();
   await env.SPORTS_DB.prepare(`INSERT INTO admin_sessions (id,email,token_hash,expires_at,created_at) VALUES (?,?,?,?,datetime('now'))`).bind(crypto.randomUUID(),row.email,sessionHash,expires).run();
+  await registerReview(env.SPORTS_DB,'owner',sessionHash);
   return new Response(null,{status:302,headers:{Location:'/admin.html','Set-Cookie':`ks_admin=${session}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_SECONDS}`,'Cache-Control':'no-store'}});
 }
 
@@ -35,7 +37,7 @@ export async function onRequestPost({request,env}){
       const user=await env.SPORTS_DB.prepare(`SELECT password_hash,password_salt,password_iterations FROM admin_users WHERE email=? LIMIT 1`).bind(email).first();
       if(!user)return json({success:false,error:'No password has been set yet. Use “Email me a setup link” once.'},409);
       const attempted=await passwordHash(password,user.password_salt,Number(user.password_iterations||PBKDF2_ITERATIONS));if(!constantTimeEqual(attempted,user.password_hash))return json({success:false,error:'That password is incorrect.'},403);
-      const session=randomToken(),sessionHash=await sha256(session),expires=new Date(Date.now()+SESSION_SECONDS*1000).toISOString();await env.SPORTS_DB.prepare(`INSERT INTO admin_sessions (id,email,token_hash,expires_at,created_at) VALUES (?,?,?,?,datetime('now'))`).bind(crypto.randomUUID(),email,sessionHash,expires).run();
+      const session=randomToken(),sessionHash=await sha256(session),expires=new Date(Date.now()+SESSION_SECONDS*1000).toISOString();await env.SPORTS_DB.prepare(`INSERT INTO admin_sessions (id,email,token_hash,expires_at,created_at) VALUES (?,?,?,?,datetime('now'))`).bind(crypto.randomUUID(),email,sessionHash,expires).run();await registerReview(env.SPORTS_DB,'owner',sessionHash);
       return new Response(JSON.stringify({success:true,message:'Signed in.'}),{headers:{'Content-Type':'application/json; charset=utf-8','Set-Cookie':`ks_admin=${session}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_SECONDS}`,'Cache-Control':'no-store'}});
     }
     await env.SPORTS_DB.prepare(`DELETE FROM admin_login_tokens WHERE datetime(expires_at)<=datetime('now') OR used_at IS NOT NULL`).run();

@@ -1,3 +1,4 @@
+import {registerReview,DEVICE_SECONDS} from '../_lib/session-review.js';
 import {syncAssistantAccess} from '../_lib/assistant-coaches.js';
 import {passId,eligibleSetup,beforeExpiry,classifyTravel} from '../_lib/travel-pass.js';
 import {ensureCoachCore} from '../_lib/coach-auth.js';
@@ -70,10 +71,10 @@ export async function onRequestPost({request,env}){
     return json({success:false,error:'Invalid action.'},400);
   }catch(error){console.error('coach account error',error);return json({success:false,error:'Something went wrong.'},500)}
 }
-export async function makeSession(db,coachId,email,data){const token=randomHex(32),hash=await sha256(token),id=crypto.randomUUID(),expires=new Date(Date.now()+30*86400000).toISOString();const session=await db.prepare(`INSERT INTO coach_sessions(id,coach_id,email,token_hash,expires_at,created_at)
+export async function makeSession(db,coachId,email,data){const token=randomHex(32),hash=await sha256(token),id=crypto.randomUUID(),expires=new Date(Date.now()+DEVICE_SECONDS*1000).toISOString();const session=await db.prepare(`INSERT INTO coach_sessions(id,coach_id,email,token_hash,expires_at,created_at)
  SELECT ?,id,email,?,CASE WHEN id=? AND review_token_hash IS NOT NULL THEN datetime(reviewed_at,'+72 hours') ELSE ? END,datetime('now')
  FROM coach_access_requests WHERE id=? AND status='approved' AND ${beforeExpiry} RETURNING id`).bind(id,hash,passId,expires,coachId).first();
- if(!session)return json({success:false,error:'Coach access has expired or changed.'},403);const r=json(data);r.headers.append('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${30*86400}`);return r}
+ if(!session)return json({success:false,error:'Coach access has expired or changed.'},403);await registerReview(db,'coach',hash);const r=json(data);r.headers.append('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${DEVICE_SECONDS}`);return r}
 async function schema(db){await ensureCoachCore(db);await db.prepare('CREATE TABLE IF NOT EXISTS coach_auth_limits(key TEXT PRIMARY KEY,count INTEGER NOT NULL)').run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_login_otps (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,code_hash TEXT NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();await db.prepare(`CREATE TABLE IF NOT EXISTS coach_sessions (id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,email TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`).run();for(const q of [`ALTER TABLE coach_access_requests ADD COLUMN password_hash TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_salt TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN password_iterations INTEGER`,`ALTER TABLE coach_access_requests ADD COLUMN team_name TEXT`,`ALTER TABLE coach_access_requests ADD COLUMN team_code TEXT`])try{await db.prepare(q).run()}catch{}}
 export async function passwordHash(password,saltHex,iterations){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']),salt=new Uint8Array(saltHex.match(/.{2}/g).map(x=>parseInt(x,16))),bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations},key,256);return hex(new Uint8Array(bits))}
 async function sha256(v){return hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(v))))) }
