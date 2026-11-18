@@ -115,7 +115,13 @@ const zone=new Intl.DateTimeFormat('en-US',{timeZone:'America/Denver',timeZoneNa
 return Date.parse(r.date+'T23:59:59Z')-Number(zone.replace('GMT','')||0)*3600000
 }
 function scoreVisible(r,windowMs,now=Date.now()){const age=now-finalTime(r);return Number.isFinite(age)&&age>=0&&age<windowMs}
-function nextCardInfo(t){return t.id==='football'?footballNextGame():t.id==='crosscountry'?crossCountryNextMeet():t.id==='golf'?golfNextEvent():t.id==='volleyball'?volleyballNextEvent():t.season?'Schedule coming soon':'Out of season'}
+
+function winterProgram(t){return t.id==='boys-basketball'?winterSportsData.boys:t.id==='girls-basketball'?winterSportsData.girls:t.id==='wrestling'?winterSportsData.wrestling:null}
+function winterNext(t){const d=winterProgram(t);if(!d)return '';const next=d.events.find(e=>e.end>=scheduleToday()&&e.levels.Varsity);return next?esc(date(next.date)+(next.end!==next.date?' – '+date(next.end):'')+' · '+next.title+' · '+next.levels.Varsity):'Season schedule available'}
+function winterRoster(t){const d=winterProgram(t),roster=d?.roster;if(!roster?.length)return '<div class="empty">The school has not supplied a wrestling roster yet.</div>';return '<p class="source">2026–27 program roster · '+roster.length+' players. The file does not assign Varsity, JV or Freshman teams or jersey numbers.</p>'+(d.coaches?.length?'<p><strong>Coaching staff:</strong> '+d.coaches.map(esc).join(' · ')+'</p>':'')+'<table style="width:100%;border-collapse:collapse;text-align:left"><thead><tr><th scope="col">Player</th></tr></thead><tbody>'+roster.map(name=>'<tr style="border-bottom:1px solid var(--line)"><th scope="row" style="padding:10px 6px">'+esc(name)+'</th></tr>').join('')+'</tbody></table><p class="source">Source: uploaded Kanab High School 2026–27 roster. Verify any names with the school if spelling differs across sports.</p>'}
+function winterSchedule(t,level){const d=winterProgram(t);if(!d)return '';const key=level==='Freshman'?'Frosh':level;return d.events.filter(e=>e.end>=scheduleToday()&&e.levels[key]).map(e=>'<article class="detail-row"><div class="kicker">'+esc(date(e.date)+(e.end!==e.date?' – '+date(e.end):''))+' · '+esc(level)+'</div><h3>'+esc(e.title)+'</h3><p>'+esc(e.levels[key])+'</p>'+(e.note?'<p class="source">'+esc(e.note)+'</p>':'')+'</article>').join('')+'<p class="source">Source: uploaded Kanab High School 2026–27 '+esc(t.sport)+' schedule. Departure and seating data omitted; times are preserved as printed.</p>'}
+function winterUpcoming(){const today=scheduleToday();return [['boys-basketball',winterSportsData.boys],['girls-basketball',winterSportsData.girls],['wrestling',winterSportsData.wrestling]].flatMap(([team,d])=>d.events.filter(e=>e.end>=today&&e.levels.Varsity).map(e=>({date:e.date,team,title:team==='boys-basketball'?'Boys Basketball':team==='girls-basketball'?'Girls Basketball':'Wrestling',detail:e.title+' · Varsity '+e.levels.Varsity})))}
+function nextCardInfo(t){return winterProgram(t)?winterNext(t):t.id==='football'?footballNextGame():t.id==='crosscountry'?crossCountryNextMeet():t.id==='golf'?golfNextEvent():t.id==='volleyball'?volleyballNextEvent():t.season?'Schedule coming soon':'Out of season'}
 const cardRecordLevels={};
 function cardMarkup(t,now){
 const levels=['crosscountry','golf'].includes(t.id)?[]:teamLevels(t);
@@ -140,6 +146,7 @@ footballData.games.filter(g=>g[0]==='Varsity'&&('2026-'+g[1])>=today&&!recordedR
 volleyballData.events.filter(e=>e.end>=today&&!recordedResults(volleyball).some(r=>r.date===e.start)).forEach(e=>{const varsity=e.times.split(' · ').find(x=>x.startsWith('Varsity'))||e.times;events.push({date:e.start,team:'volleyball',title:'Cowgirls Volleyball',detail:date(e.start)+(e.end!==e.start?' – '+date(e.end):'')+' · '+e.title+' · '+varsity.replace('Varsity ','')})});
 crossCountryData.meets.filter(m=>m[0]>=today).forEach(m=>events.push({date:m[0],team:'crosscountry',title:'Cross Country',detail:date(m[0])+' · '+m[1]+' · '+m[2]}));
 golfData.events.filter(e=>e[1]>=today).forEach(e=>events.push({date:e[0],team:'golf',title:'Cowboys Golf',detail:date(e[0])+(e[1]!==e[0]?' – '+date(e[1]):'')+' · '+e[2]+' · '+e[4]}));
+events.push(...winterUpcoming());
 return events.sort((a,b)=>a.date.localeCompare(b.date))[0]||null
 }
 let coachScores=[];
@@ -169,6 +176,7 @@ footballData.games.filter(g=>g[0]==='Varsity'&&('2026-'+g[1])>=today&&!recordedR
 volleyballData.events.filter(e=>e.end>=today&&!recordedResults(volleyball).some(r=>r.date===e.start)).forEach(e=>{const varsity=e.times.split(' · ').find(x=>x.startsWith('Varsity'))||e.times;upcoming.push({date:e.start,team:'volleyball',title:'Volleyball',detail:e.title+' · '+varsity.replace('Varsity ','')})});
 crossCountryData.meets.filter(m=>m[0]>=today).forEach(m=>upcoming.push({date:m[0],team:'crosscountry',title:'Cross Country',detail:m[1]+' · '+m[2]}));
 golfData.events.filter(e=>e[1]>=today).forEach(e=>upcoming.push({date:e[0],team:'golf',title:'Golf',detail:e[2]+' · '+e[4]}));
+upcoming.push(...winterUpcoming());
 upcoming.sort((a,b)=>a.date.localeCompare(b.date));
 const next=upcoming[0],nextCard=document.getElementById('homeNextCard'),nextList=document.getElementById('homeNextList');
 if(next&&nextCard)nextCard.dataset.team=next.team;
@@ -224,6 +232,7 @@ function levelNotice(t){return '<div class="empty">'+esc(activeLevel)+' roster a
 function levelSchedule(t){
 if(t.id==='football')return footballData.games.filter(g=>g[0]===(activeLevel==='Freshman'?'Frosh':activeLevel)&&upcomingDate('2026-'+g[1],t,activeLevel)).map(([l,d,opponent,venue,time,note])=>'<article class="detail-row"><div class="kicker">'+esc(date('2026-'+d))+' · '+esc(activeLevel)+'</div><h3>'+esc(opponent)+'</h3><p>'+esc(venue)+' · '+esc(time)+'</p>'+(note?'<p class="source">'+(note==='Homecoming'?'<strong>HOMECOMING · HOME GAME</strong>':'Confirm details: '+esc(note))+'</p>':'')+'</article>').join('');
 if(t.id==='volleyball')return volleyballData.events.filter(e=>upcomingDate(e.end,t,activeLevel,e.start)).filter(e=>e.times.includes(' · ')||e.times.startsWith(activeLevel+' ')||(e.times==='Time TBA'&&activeLevel==='Varsity')).map(e=>{const time=e.times.includes(' · ')?e.times.split(' · ').find(s=>s.startsWith(activeLevel+' ')):e.times;return '<article class="detail-row"><div class="kicker">'+esc(date(e.start)+(e.end!==e.start?' – '+date(e.end):''))+' · '+esc(activeLevel)+'</div><h3>'+esc(e.title)+'</h3><p>'+esc(time)+'</p></article>'}).join('')+'<p class="source">Times are shown as supplied; AM/PM was not specified. State events are shown under Varsity.</p>';
+if(winterProgram(t))return winterSchedule(t,activeLevel);
 if(t.id==='golf')return '<div class="empty">The supplied golf schedule does not distinguish Varsity and JV entries. This is the shared program schedule; confirm participation with the coach.</div>'+golfSchedule();
 return '<div class="empty">No '+esc(activeLevel)+' schedule has been posted for this team yet.</div>'
 }
