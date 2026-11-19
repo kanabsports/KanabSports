@@ -26,10 +26,13 @@ assert.equal(await hasMembership(db,'other@example.test','KS-TEST'),false);
 assert.equal(await hasMembership(db,'parent@example.test','KS-OTHER'),false);
 sqlite.prepare("UPDATE guardian_memberships SET status='revoked'").run();
 assert.equal((await call(team,req('/api/team-connection?code=KS-TEST'))).status,403);
-assert.equal((await call(push,req('/api/push',{action:'subscribe',codes:['KS-TEST'],endpoint:'https://fcm.googleapis.com/test',token:'b'.repeat(64)}))).status,403);
+const awaitingPush=await call(push,req('/api/push',{action:'subscribe',codes:['KS-TEST'],endpoint:'https://fcm.googleapis.com/test',token:'b'.repeat(64)}));
+assert.equal(awaitingPush.status,200,'Signed-in device setup is independent of team approval');
+assert.equal((await awaitingPush.json()).awaitingApproval,1);
+assert.deepEqual(JSON.parse(sqlite.prepare('SELECT codes FROM push_devices').get().codes),[],'Revoked team cannot receive push alerts');
 sqlite.prepare("UPDATE guardian_memberships SET status='approved',expires=1").run();
 assert.equal(await hasMembership(db,'parent@example.test','KS-TEST'),false);
-console.log('PASS: shared code blocked; requests do not approve; parent cannot self-approve; correct membership allowed; wrong parent/team, revocation and expiry denied; unauthorized push blocked.');
+console.log('PASS: shared code blocked; requests do not approve; parent cannot self-approve; correct membership allowed; wrong parent/team, revocation and expiry denied; unauthorized private team push excluded.');
 
 const adminToken='owner-test-token',adminHash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(adminToken))).toString('hex');
 sqlite.prepare("INSERT INTO admin_sessions(id,email,token_hash,expires_at) VALUES('owner','howdy@kanabsports.com',?,datetime('now','+1 hour'))").run(adminHash);
@@ -38,6 +41,7 @@ const approved=await call(access,ownerRequest({action:'approve',email:'parent@ex
 assert.equal(approved.status,200);const membership=await approved.json();
 assert.equal(await hasMembership(db,'parent@example.test','KS-TEST'),true);
 assert.equal((await call(push,req('/api/push',{action:'subscribe',codes:['KS-TEST'],endpoint:'https://fcm.googleapis.com/test',token:'b'.repeat(64)}))).status,200);
+assert.deepEqual(JSON.parse(sqlite.prepare('SELECT codes FROM push_devices').get().codes),['KS-TEST'],'Approval permits private push subscription');
 assert.equal((await call(access,ownerRequest({action:'revoke',id:membership.id}))).status,200);
 assert.equal(await hasMembership(db,'parent@example.test','KS-TEST'),false);
 assert.deepEqual(await notifyTeam(db,'KS-TEST','test-no-delivery'),{accepted:0,failed:0});
