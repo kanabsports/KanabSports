@@ -1,5 +1,6 @@
 // Node 22+: node tests/family-push-activation.test.mjs
 // No production device or notification is contacted. Delivery is mocked.
+import {createECDH,hkdfSync,createDecipheriv,randomBytes} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {onRequest} from '../functions/api/push.js';
@@ -50,13 +51,28 @@ assert.equal(response.status,200);assert.equal(response.data.registeredTeams,1);
 assert.equal(response.data.awaitingApproval,1);
 assert.deepEqual(JSON.parse(sql.prepare('SELECT codes FROM push_devices').get().codes),['KANAB-HS']);
 assert.equal((await call(subscribe(['KANAB-HS'],'c'.repeat(64)),cookie)).status,403,'Device token ownership stays enforced');
+const handset=createECDH('prime256v1');
+const publicKey=handset.generateKeys(),auth=randomBytes(16);
+const deviceKeys={p256dh:publicKey.toString('base64url'),auth:auth.toString('base64url')};
 let attempts=0;
 globalThis.fetch=async(url,options)=>{
  assert.equal(url,endpoint);assert.equal(options.redirect,'manual');
+ if(!attempts){
+  assert.equal(options.headers['Content-Encoding'],'aes128gcm');
+  const frame=Buffer.from(options.body),sender=frame.subarray(21,86);
+  assert.equal(frame.readUInt32BE(16),4096);
+  const info=Buffer.concat([Buffer.from('WebPush: info\0'),publicKey,sender]);
+  const ikm=hkdfSync('sha256',handset.computeSecret(sender),auth,info,32);
+  const derive=(label,n)=>hkdfSync('sha256',ikm,frame.subarray(0,16),'Content-Encoding: '+label+'\0',n);
+  const cipher=createDecipheriv('aes-128-gcm',derive('aes128gcm',16),derive('nonce',12));
+  cipher.setAuthTag(frame.subarray(-16));
+  assert.equal(Buffer.concat([cipher.update(frame.subarray(86,-16)),cipher.final()]).toString(),'family-device-test\x02');
+ }
  attempts++;
  return new Response(null,{status:201});
 };
-response=await call({action:'test',endpoint,token},cookie);
+assert.equal((await call({action:'test',endpoint,keys:deviceKeys,token:'e'.repeat(64)},cookie)).status,403);
+response=await call({action:'test',endpoint,token,keys:deviceKeys},cookie);
 assert.equal(response.status,200);assert.equal(response.data.status,'accepted');
 assert.equal(attempts,1,'A real push transport attempt is made on request');
 assert.equal((await notifyTeam(db,'PRIVATE-NOT-APPROVED','private-2')).accepted,0);

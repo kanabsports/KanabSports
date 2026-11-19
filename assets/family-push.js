@@ -1,13 +1,12 @@
-import {notificationPanel} from '/assets/notification-panel.js?v=1';
 const key='ksPushDeviceToken';
 const token=()=>{let t=localStorage.getItem(key);if(!t){t=Array.from(crypto.getRandomValues(new Uint8Array(32)),b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem(key,t);}return t;};
-async function api(body){const r=await fetch('/api/push',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Notifications unavailable.');return d;}
+async function api(body){const r=await fetch('/api/push',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store',signal:AbortSignal.timeout(15000)});const d=await r.json();if(!r.ok)throw Error(d.error||'Notifications unavailable.');return d;}
 const bytes=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
 
 export function mountPush(host,getCodes){
  if(window.pepOwnerDemo){host.textContent='Demo mode: device notifications are disabled.';return;}
  host.innerHTML='<details open><summary style="font-weight:900;cursor:pointer;min-height:44px">App notifications</summary><p class="note" id="pushHelp">Get coach messages and team updates on this device. On iPhone, install My Family from Safari’s Share menu first. SMS is separate and optional.</p><p id="pushState" class="note" role="status" aria-live="polite">Checking notification support…</p><p id="pushApproval" class="note" role="status" aria-live="polite"></p><div class="team-actions"><button type="button" class="btn primary small" id="pushEnable" hidden>Turn On Notifications</button><button type="button" class="btn ghost small" id="pushTest" hidden>Send this device a test</button><button type="button" class="btn ghost small" id="pushConfirm" hidden>Yes, I got it</button><button type="button" class="btn ghost small" id="pushDisable" hidden>Turn off</button></div></details>';
- const panel=notificationPanel(host,{portal:'family',title:'App notifications',bottom:document.getElementById('pane-settings')});
+ const deviceStatus=document.createElement('p');deviceStatus.className='note';deviceStatus.setAttribute('role','status');host.querySelector('#pushState').before(deviceStatus);
  const $=id=>host.querySelector('#'+id),state=$('pushState'),approval=$('pushApproval');
  let registration,config,sub,busy=false;
  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1),standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
@@ -19,79 +18,78 @@ export function mountPush(host,getCodes){
   const count=Number(result?.awaitingApproval)||0;
   approval.textContent=count?`${count} saved team${count===1?' is':'s are'} still awaiting guardian approval. Private alerts for ${count===1?'that team':'those teams'} stay off, but your device can receive a test now.`:'';
  };
- const refresh=async()=>{
-  sub=await registration.pushManager.getSubscription();
-  panel.sync(sub);
-  const permitted=Notification.permission==='granted';
-  $('pushEnable').hidden=!!sub;
-  $('pushTest').hidden=!sub||!permitted;
+ let registered=false;
+ function controls(){
+  const permission=Notification.permission;
+  deviceStatus.textContent='Permission: '+permission+'. Device registration: '+(registered?'confirmed.':'unconfirmed.');
+  $('pushEnable').hidden=registered||permission==='denied';
+  $('pushTest').hidden=permission==='denied';
   $('pushDisable').hidden=!sub;
+ }
+ async function save(){
+  registered=false;
+  const saved=await api({action:'subscribe',endpoint:sub.endpoint,token:token(),codes:codes()});
+  registered=saved.success===true;
+  if(!registered)throw Error('Device registration failed. Retry Turn On Notifications.');
+  showApproval(saved);
+ }
+ async function setupAndTest(){
   $('pushConfirm').hidden=true;
-  state.textContent=sub&&permitted?'Notifications enabled on this device. Send a test to check delivery.':!permitted&&Notification.permission==='denied'?'iPhone notifications are blocked. Allow them in iOS Settings for Kanab Sports, then reopen My Family.':'Notifications are off. Tap Turn On Notifications.';
- };
- const testResult=result=>{
-  if(result.status==='accepted'){
-   state.textContent='Test sent through the push service. Look for a “Kanab Sports · Coach Update” alert on this device. Did you receive it?';
-   $('pushConfirm').hidden=false;
-  }else{
-   state.textContent=result.message||'The test was not accepted. Please retry.';
-   $('pushConfirm').hidden=true;
-   panel.error();
+  // Ask inside the tap handler, before waiting on the worker or network.
+  if(Notification.permission!=='granted'){
+   state.textContent='Requesting permission…';
+   if(await Notification.requestPermission()!=='granted')throw Error('Allow notifications for My Family in iPhone Settings, then reopen the app.');
   }
- };
- const run=async fn=>{
+  state.textContent='Registering this device…';
+  sub=await registration.pushManager.getSubscription()||await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(config.publicKey)});
+  await save();
+  controls();
+  state.textContent='Sending this device a test…';
+  const result=await api({action:'test',endpoint:sub.endpoint,token:token(),keys:sub.toJSON().keys});
+  if(result.status==='expired'){
+   registered=false;
+   await sub.unsubscribe();sub=null;
+   throw Error('This subscription expired. Tap Turn On Notifications to reconnect.');
+  }
+  if(result.status!=='accepted')throw Error(result.message||'Test rejected. Retry the device test.');
+  state.textContent='Push service accepted the test. Check for “My Family · Notification test” on this phone.';
+  $('pushConfirm').hidden=false;
+ }
+ let pending=false;
+ async function run(action){
   if(busy)return;
   busy=true;host.querySelectorAll('button').forEach(b=>b.disabled=true);
-  try{await fn()}catch(e){state.textContent=e.message||'Notification setup failed. Please try again.';panel.error()}
-  finally{busy=false;host.querySelectorAll('button').forEach(b=>b.disabled=false)}
- };
- $('pushEnable').onclick=()=>run(async()=>{
-  if(!registration||!config)throw Error('Notification service is still connecting. Reopen My Family and try again.');
-  state.textContent='Requesting notification permission…';
-  // Must run directly from the tap: iOS requires a real user gesture here.
-  const permission=await Notification.requestPermission();
-  if(permission!=='granted')throw Error('Notifications are not permitted. Allow them in iPhone Settings, then retry.');
-  state.textContent='Connecting your device…';
-  const existing=await registration.pushManager.getSubscription();
-  const created=existing||await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(config.publicKey)});
-  const deviceToken=token();
-  let saved;
-  try{saved=await api({action:'subscribe',endpoint:created.endpoint,token:deviceToken,codes:codes()})}
-  catch(error){if(!existing)await created.unsubscribe().catch(()=>{});throw error}
-  await refresh();
-  showApproval(saved);
-  state.textContent='Notifications are on. Sending a test to this device…';
-  try{testResult(await api({action:'test',endpoint:created.endpoint,token:deviceToken}))}
-  catch(error){state.textContent='Notifications are on, but the test could not be sent: '+error.message;panel.error()}
- });
- $('pushTest').onclick=()=>run(async()=>{
-  if(!sub)throw Error('Turn notifications on before sending a test.');
-  state.textContent='Sending your test…';
-  testResult(await api({action:'test',endpoint:sub.endpoint,token:token()}));
- });
- $('pushConfirm').onclick=()=>{if(!sub)return;$('pushConfirm').hidden=true;state.textContent='Confirmed! App notifications are working on this device.';panel.tested(sub)};
+  try{await action()}catch(e){state.textContent=(e.message||'Setup failed.')+' If needed, reopen My Family and retry.'}
+  finally{busy=false;controls();host.querySelectorAll('button').forEach(b=>b.disabled=false);if(pending){pending=false;reconcile()}}
+ }
+ $('pushEnable').onclick=$('pushTest').onclick=()=>run(setupAndTest);
+ $('pushConfirm').onclick=()=>{$('pushConfirm').hidden=true;state.textContent='You confirmed receipt on this phone.'};
  $('pushDisable').onclick=()=>run(async()=>{
-  if(sub){try{await api({action:'unsubscribe',endpoint:sub.endpoint,token:token()})}
-   finally{await sub.unsubscribe()}}
-  approval.textContent='';
-  panel.reset();
-  await refresh();
+  try{await api({action:'unsubscribe',endpoint:sub.endpoint,token:token()})}finally{await sub.unsubscribe();sub=null;registered=false}
+  approval.textContent='';$('pushConfirm').hidden=true;state.textContent='Device notifications are off.';
  });
- const reconcile=async()=>{
-  if(!registration||busy)return;
-  const current=await registration.pushManager.getSubscription();
-  if(!current)return;
-  // Keep a signed-in parent's device subscribed even if their team list is empty
-  // or a new private team still needs school approval. The API filters access.
-  const saved=await api({action:'subscribe',endpoint:current.endpoint,token:token(),codes:codes()});
-  showApproval(saved);
- };
- document.addEventListener('familyconnectionschanged',()=>reconcile().catch(e=>{approval.textContent=e.message;panel.error()}));
+ function reconcile(){
+  if(!config||!sub)return;
+  if(busy){pending=true;return}
+  run(save);
+ }
+ document.addEventListener('familyconnectionschanged',reconcile);
  (async()=>{
-  registration=await navigator.serviceWorker.register('/sw.js',{scope:'/',updateViaCache:'none'});
-  await navigator.serviceWorker.ready;
+  const script='/sw.js?v=family-device-test-v2';
+  registration=await navigator.serviceWorker.register(script,{scope:'/',updateViaCache:'none'});
+  const worker=registration.installing||registration.waiting||registration.active;
+  if(!worker||new URL(worker.scriptURL).search!==new URL(script,location.href).search)throw Error('Reopen My Family to finish updating notifications.');
+  if(worker.state!=='activated')await new Promise((resolve,reject)=>{
+   const finish=error=>{clearTimeout(timer);worker.removeEventListener('statechange',changed);error?reject(error):resolve()};
+   const changed=()=>{if(worker.state==='activated')finish();else if(worker.state==='redundant')finish(Error('Reopen My Family to retry the update.'))};
+   const timer=setTimeout(()=>finish(Error('Worker update timed out. Reopen My Family.')),15000);
+   worker.addEventListener('statechange',changed);changed();
+  });
   config=await api();
-  await refresh();
-  await reconcile();
- })().catch(error=>{state.textContent='Could not connect notifications: '+error.message;panel.error()});
+  await run(async()=>{
+   sub=await registration.pushManager.getSubscription();
+   if(sub&&Notification.permission==='granted')await save();
+   state.textContent=registered?'Notifications enabled. Send this device a test to check receipt.':Notification.permission==='denied'?'Allow notifications in iPhone Settings, then reopen My Family.':'Turn on notifications to register this device and send a test.';
+  });
+ })().catch(error=>{state.textContent='Could not connect notifications. Reopen My Family and retry. '+error.message});
 }

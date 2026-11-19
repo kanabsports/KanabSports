@@ -1,6 +1,6 @@
 import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
 import {CONNECTIONS} from '../../assets/family-connections.js';
-import {pushSchema,keys,digest,validEndpoint,sendPush} from '../_lib/web-push.js';
+import {pushSchema,keys,digest,validEndpoint,sendPush,familyTestPayload} from '../_lib/web-push.js';
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 export async function onRequest({request,env}){
  if(!env.SPORTS_DB)return json({error:'Notifications are temporarily unavailable.'},503);
@@ -30,7 +30,9 @@ export async function onRequest({request,env}){
   return json({success:true,registeredTeams:approved.length,awaitingApproval:requested.length-approved.length});
  }
  if(body.action==='unsubscribe'){if(existing)await db.prepare('DELETE FROM push_devices WHERE id=? AND token_hash=?').bind(id,tokenHash).run();return json({success:true});}
- if(body.action==='test'){if(!existing)return json({error:'Enable notifications first.'},404);const status=await sendPush(db,existing);return json({status,message:status==='accepted'?'Test accepted by your notification provider. Check this device.':'The provider did not accept the test. Try enabling notifications again.'});}
+ if(body.action==='test'){if(!existing)return json({error:'Enable notifications first.'},404);let payload;
+  if(body.keys){try{payload=await familyTestPayload(body.keys)}catch{return json({error:'Invalid device keys. Turn notifications off and on again.'},400)}}
+  const status=await sendPush(db,existing,'push_devices',payload);return json({status,message:status==='accepted'?'Test accepted by your notification provider. Check this device.':'Push service returned '+status+'. Turn notifications off and on to reconnect.'});}
  return json({error:'Unknown action.'},400);
  }catch{return json({error:'Notifications could not be updated. Please try again.'},503);}
 }
