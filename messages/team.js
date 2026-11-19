@@ -67,9 +67,10 @@ $('revoke').onclick=async()=>{if(!current||!confirm('Withdraw consent and close 
 let watching=false,browsingOlder=false;
 $('older').onclick=()=>{browsingOlder=true;return history(older)};
 function refreshStaff(){
- if(document.hidden||watching||browsingOlder||role!=='coach'||$('channels').disabled||current?.enrollment||(!current&&$('activateStaff').hidden))return;
+ if(document.hidden||watching||browsingOlder||$('channels').disabled||(!current&&(role!=='coach'||$('activateStaff').hidden)))return;
  watching=true;(current?history(null,true):open()).catch(e=>status(e.message)).finally(()=>{watching=false});
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!current&&role==='coach')open().catch(e=>status(e.message));else refreshStaff()});
+window.addEventListener('focus',refreshStaff);
 setInterval(refreshStaff,10000);
 open().catch(e=>status(e.message));

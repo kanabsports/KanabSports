@@ -1,3 +1,4 @@
+import {ensureDetails} from './score-details.js';
 export async function onRequestGet(context) {
   const { env } = context;
 
@@ -8,8 +9,9 @@ export async function onRequestGet(context) {
   try {
     await ensureSchema(env.SPORTS_DB);
 
+    await ensureDetails(env.SPORTS_DB);
     const query = await env.SPORTS_DB.prepare(`
-      SELECT id, sport, team, opponent, result, event_date, message, link, published_at, created_at
+      SELECT (SELECT details FROM score_details WHERE score_id=coach_submissions.id) AS details, id, sport, team, opponent, result, event_date, message, link, published_at, created_at
       FROM coach_submissions
       WHERE status='approved'
         AND type='Score'
@@ -44,6 +46,7 @@ function normalizeScore(row) {
   const parsed = parseScores(row.result || '');
   return {
     id: row.id,
+    details: row.details || '',
     sport: row.sport || 'Sport',
     team: compactTeam(row.team || 'Kanab'),
     opponent: row.opponent || 'Opponent',
