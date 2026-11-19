@@ -11,9 +11,9 @@ async function api(url,body){
 $('back').href=role==='coach'?'/coaches':role==='student'?'/':'/family/';
 $('intro').textContent=role==='coach'?'Coaches-only posts reach assigned team staff. A shared family Pep Talk goes to the selected athlete and guardian together.':role==='student'?'Your guardian can read every Pep Talk shown here.':'These are the Pep Talks addressed to you and your athlete together. Private parent conversations are in your separate inbox.';
 const label=c=>c.team_name+' · '+(c.enrollment?'Athlete '+c.student_ref+' + guardian':'Coaches only');
-async function history(before){
+async function history(before,background=false){
   const serial=++loading,c=current;if(!c)return;
-  if(!before){$('history').replaceChildren();older=null;$('older').hidden=true;}
+  if(!before&&!background){$('history').replaceChildren();older=null;$('older').hidden=true;}
   const q=new URLSearchParams({team:c.team_code,org:c.organization_id,group:c.enrollment});if(before)q.set('before',before);
   try{
     const d=await api(base+'&'+q);
@@ -23,11 +23,11 @@ async function history(before){
     older=d.older;$('older').hidden=!older;
     $('composer').hidden=role!=='coach';$('revoke').hidden=role!=='parent';
     status(nodes.length?'':'No Pep Talks here yet.');
-    await visitAlerts(role==='coach'?'/coach-sw.js':'/messages/sw.js');
+    if(!background)await visitAlerts(role==='coach'?'/coach-sw.js':'/messages/sw.js');
   }catch(e){if(serial===loading){$('history').replaceChildren();$('composer').hidden=true;status(e.message);}}
 }
 function select(index){
-  current=channels[index];pending=null;$('message').value='';$('composer').hidden=true;$('revoke').hidden=true;$('audienceText').textContent=current?label(current):'';history().catch(e=>status(e.message));
+  browsingOlder=false;current=channels[index];pending=null;$('message').value='';$('composer').hidden=true;$('revoke').hidden=true;$('audienceText').textContent=current?label(current):'';history().catch(e=>status(e.message));
 }
 async function open(){
   if(role==='student'&&location.hash){const token=location.hash.slice(1);window.history.replaceState(null,'',location.pathname+location.search);await api('/api/student-pep-access',{action:'redeem',token});}
@@ -53,7 +53,7 @@ $('activateStaff').onclick=async()=>{
  catch(e){status(e.message)}finally{button.disabled=false}
 };
 $('channels').onchange=()=>{if($('message').value&&!confirm('Discard this draft and change audience?')){$('channels').selectedIndex=channels.indexOf(current);return;}select($('channels').selectedIndex);};
-$('refresh').onclick=()=>history();$('older').onclick=()=>history(older);
+$('refresh').onclick=()=>{browsingOlder=false;return history()};
 $('composer').onsubmit=async e=>{
   e.preventDefault();const c=current,body=$('message').value.trim();if(!c||!body)return;
   if(!pending||pending.body!==body)pending={...c,body,id:crypto.randomUUID()};
@@ -63,4 +63,13 @@ $('composer').onsubmit=async e=>{
 $('signin').onsubmit=async e=>{e.preventDefault();try{const d=await api('/api/student-pep-access',{action:'request',email:$('email').value});status(d.message);}catch(e){status(e.message);}};
 $('logout').onclick=async()=>{try{await api('/api/student-pep-access',{action:'logout'});location.reload();}catch(e){status(e.message);}};
 $('revoke').onclick=async()=>{if(!current||!confirm('Withdraw consent and close athlete access to this shared audience?'))return;try{await api(base,{action:'withdraw',enrollment:current.enrollment});location.reload();}catch(e){status(e.message);}};
+// Refresh a visible staff thread without changing the composer or interrupting older history.
+let watching=false,browsingOlder=false;
+$('older').onclick=()=>{browsingOlder=true;return history(older)};
+function refreshStaff(){
+ if(document.hidden||watching||browsingOlder||role!=='coach'||$('channels').disabled||current?.enrollment||(!current&&$('activateStaff').hidden))return;
+ watching=true;(current?history(null,true):open()).catch(e=>status(e.message)).finally(()=>{watching=false});
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!current&&role==='coach')open().catch(e=>status(e.message));else refreshStaff()});
+setInterval(refreshStaff,10000);
 open().catch(e=>status(e.message));

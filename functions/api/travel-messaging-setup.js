@@ -14,7 +14,7 @@ export async function onRequest({request,env}){
     await schoolSchema(db);await schema(db);
     if(request.method==='GET'){
       const coaches=(await db.prepare(`SELECT c.team_code,c.id,c.name,c.role,c.team_name,c.organization,
-        EXISTS(SELECT 1 FROM private_message_coaches p JOIN private_message_teams t ON t.team_code=p.team_code
+        EXISTS(SELECT 1 FROM pep_messaging_staff p JOIN private_message_teams t ON t.team_code=p.team_code
         WHERE p.team_code=c.team_code AND p.coach_id=c.id AND p.active=1 AND t.enabled=1) AS enrolled`+eligible+' ORDER BY c.organization,c.name').all()).results;
       return json({online:env.PRIVATE_MESSAGING_ENABLED==='true',coaches});
     }
@@ -26,7 +26,7 @@ export async function onRequest({request,env}){
     const verified=eligible+' AND c.id=? AND c.team_code=?';
     if(!await db.prepare('SELECT c.id'+verified).bind(coach,code).first())return json({error:'Choose an approved travel coach and team.'},403);
     if(b.action==='remove'){
-      await db.batch([db.prepare('UPDATE private_message_coaches SET active=0 WHERE team_code=? AND coach_id=?').bind(code,coach),schoolAudit(db,null,code,owner.email,'remove_travel_coach',coach+' '+evidence)]);return json({saved:true});
+      await db.batch([db.prepare('INSERT INTO private_message_coaches(team_code,coach_id,active) VALUES(?,?,0) ON CONFLICT(team_code,coach_id) DO UPDATE SET active=0').bind(code,coach),schoolAudit(db,null,code,owner.email,'remove_travel_coach',coach+' '+evidence)]);return json({saved:true});
     }
     // Never revive a disabled team or replace an existing organization mapping.
     const result=await db.batch([
