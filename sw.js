@@ -1,4 +1,4 @@
-importScripts('/assets/pep-push-worker.js');
+importScripts('/assets/pep-push-worker.js?v=family-unread-badge-v1');
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 // Deliberately no fetch handler: never cache private portals or stale schedules.

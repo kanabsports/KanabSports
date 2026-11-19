@@ -1,4 +1,4 @@
-importScripts('/assets/pep-push-worker.js');
+importScripts('/assets/pep-push-worker.js?v=family-unread-badge-v1');
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 // Generic no-payload alerts reuse the existing VAPID transport. Never cache messages.
