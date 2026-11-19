@@ -18,8 +18,8 @@ async function call(endpoint,path,cookie,body,config=cfg){
  const response=await endpoint({env:config,request:new Request(root+path,{method:body?'POST':'GET',headers:{Cookie:cookie,Origin:root,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})});
  return {status:response.status,data:await response.json(),cookie:response.headers.get('Set-Cookie')?.split(';')[0]};
 }
-const mail=[];
-globalThis.fetch=async (url,opts)=>{if(url==='https://api.resend.com/emails')mail.push(JSON.parse(opts.body));return Response.json({id:'fictional-email'});};
+const mail=[],pushRequests=[];
+globalThis.fetch=async (url,opts)=>{if(String(url).startsWith('https://web.push.apple.com/'))pushRequests.push(url);if(url==='https://api.resend.com/emails')mail.push(JSON.parse(opts.body));return Response.json({id:'fictional-email'});};
 const path=role=>'/api/pep-audiences?role='+role,staffChannel='&team=REC-A&org=org-a&group=';
 let r=await call(audiences,path('coach'),staff);
 assert.deepEqual(r.data.channels.map(c=>c.enrollment),['']);
@@ -32,14 +32,22 @@ for(const [role,cookie] of [['parent',parent],['coach','ks_coach='+tokens.coachB
 const travelOnly={...cfg,PRIVATE_MESSAGING_ENABLED:'false'};
 const {onRequest:activate}=await import('../functions/api/coach-pep-talk.js');
 sqlite.exec("UPDATE school_teams SET kind='travel' WHERE team_code='REC-A'; UPDATE coach_access_requests SET role='Head Coach' WHERE id='coachA'; UPDATE coach_access_requests SET role='Assistant Coach' WHERE id='assistantA'");
-for(const session of [staff,assistant])assert.equal((await call(activate,'/api/coach-pep-talk',session,{},travelOnly)).data.active,true);
+sqlite.exec("DELETE FROM private_message_coaches WHERE team_code='REC-A' AND coach_id='assistantA'");
+const assistantPush='https://web.push.apple.com/fictional-assistant-device';
+sqlite.prepare('INSERT INTO coach_push_devices VALUES(?,?,?,?,?)').run('fictional-assistant','assistantA',assistantPush,'fixture',Date.now());
+assert.equal((await call(activate,'/api/coach-pep-talk',assistant,null,travelOnly)).data.active,false);
+assert.equal((await call(activate,'/api/coach-pep-talk',staff,{},travelOnly)).data.active,true);
+assert.equal((await call(activate,'/api/coach-pep-talk',assistant,null,travelOnly)).data.active,true);
 for(const [sender,reader,body] of [[staff,assistant,'Head coach test'],[assistant,staff,'Assistant reply']]){
  const sent=await call(audiences,path('coach'),sender,{...base,id:crypto.randomUUID(),body},travelOnly);
  assert.equal(sent.status,200);
  assert.ok((await call(audiences,path('coach')+staffChannel,reader,null,travelOnly)).data.messages.some(m=>m.body===body));
 }
 assert.equal((await call(audiences,path('parent')+staffChannel,parent,null,travelOnly)).status,403);
-sqlite.exec("UPDATE school_teams SET kind='rec' WHERE team_code='REC-A'");
+assert.equal(pushRequests.filter(url=>url===assistantPush).length,1);
+sqlite.exec("INSERT INTO private_message_coaches VALUES('REC-A','assistantA',0)");
+assert.equal((await call(audiences,path('coach')+staffChannel,assistant,null,travelOnly)).status,403);
+sqlite.exec("UPDATE private_message_coaches SET active=1 WHERE team_code='REC-A' AND coach_id='assistantA'; UPDATE school_teams SET kind='rec' WHERE team_code='REC-A'");
 const setup='/api/coach-messages',save={action:'set_category',kind:'travel',revision:0};
 assert.equal((await call(coachMessages,setup,parent,save)).status,401);
 assert.equal((await call(coachMessages,setup,staff,save)).status,200);

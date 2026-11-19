@@ -1,5 +1,5 @@
 import {getCoach,json} from '../_lib/coach-auth.js';
-import {schema} from '../_lib/private-messages.js';
+import {schema,messagingTeams} from '../_lib/private-messages.js';
 import {schoolSchema,trustedOrigin} from '../_lib/school-access.js';
 
 export async function onRequest({request,env}){
@@ -32,8 +32,9 @@ export async function onRequest({request,env}){
   }
   const state=await db.prepare('SELECT t.enabled,pc.active,x.created FROM private_message_teams t LEFT JOIN private_message_coaches pc ON pc.team_code=t.team_code AND pc.coach_id=? LEFT JOIN travel_pep_activations x ON x.team_code=t.team_code AND x.coach_id=pc.coach_id WHERE t.team_code=?').bind(coach.id,code).first();
   if(state&&(state.enabled===0||state.active===0))return json({available:false,message:'Messaging was paused by the owner. Contact the owner to restore it.'});
-  const active=Boolean(state?.enabled&&state.active&&(state.created||env.PRIVATE_MESSAGING_ENABLED==='true'));
+  const active=Boolean(await db.prepare(messagingTeams(env)+' AND a.id=? AND t.team_code=?').bind(coach.id,code).first());
   if(request.method==='POST'&&!active)return json({error:'Your assignment changed. Refresh the Coach Portal.'},409);
-  return json({available:true,active,message:active?'Pep Talk is on for your coaching account and travel team.':'Your travel coaching account is approved. You can turn on Pep Talk.'});
+  const needsStaffActivation=active&&coach.role.toLowerCase()==='head coach'&&!await db.prepare('SELECT 1 FROM travel_pep_staff_teams WHERE team_code=?').bind(code).first();
+  return json({available:true,active,needsStaffActivation,message:needsStaffActivation?'Turn on Pep Talk for your approved coaching staff.':active?(coach.role.toLowerCase()==='head coach'?'Pep Talk is on for your approved coaching staff.':'Pep Talk is on for your coaching account and travel team.'):'Your travel coaching account is approved. You can turn on Pep Talk.'});
  }catch{return json({error:'Could not check Pep Talk. Refresh and try again.'},503)}
 }

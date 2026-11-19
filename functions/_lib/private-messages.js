@@ -10,6 +10,20 @@ export async function schema(db){
  `CREATE TABLE IF NOT EXISTS private_message_teams(team_code TEXT PRIMARY KEY,organization_id TEXT NOT NULL,name TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),UNIQUE(team_code,organization_id))`,
  `CREATE TABLE IF NOT EXISTS private_message_coaches(team_code TEXT NOT NULL,coach_id TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),PRIMARY KEY(team_code,coach_id))`,
  `CREATE TABLE IF NOT EXISTS travel_pep_activations(team_code TEXT NOT NULL,coach_id TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(team_code,coach_id))`,
+ `CREATE VIEW IF NOT EXISTS travel_pep_staff_teams AS
+  SELECT DISTINCT x.team_code FROM travel_pep_activations x
+  JOIN coach_access_requests h ON h.id=x.coach_id AND h.team_code=x.team_code
+  JOIN private_message_coaches pc ON pc.team_code=x.team_code AND pc.coach_id=h.id
+  JOIN private_message_teams t ON t.team_code=x.team_code
+  JOIN school_teams s ON s.team_code=x.team_code
+  WHERE lower(trim(h.role))='head coach' AND h.status='approved' AND pc.active=1
+  AND t.enabled=1 AND s.kind='travel' AND s.school_id IS NULL`,
+ `CREATE VIEW IF NOT EXISTS pep_messaging_staff AS
+  SELECT team_code,coach_id,active FROM private_message_coaches
+  UNION ALL
+  SELECT c.team_code,c.id,1 FROM coach_access_requests c JOIN travel_pep_staff_teams t ON t.team_code=c.team_code
+  WHERE c.status='approved' AND lower(trim(c.role)) IN ('head coach','assistant coach','coach')
+  AND NOT EXISTS(SELECT 1 FROM private_message_coaches pc WHERE pc.team_code=c.team_code AND pc.coach_id=c.id)`,
  `CREATE TABLE IF NOT EXISTS private_conversations(id TEXT PRIMARY KEY,organization_id TEXT NOT NULL,team_code TEXT NOT NULL,parent_email TEXT NOT NULL,coach_id TEXT NOT NULL,created INTEGER NOT NULL,UNIQUE(organization_id,team_code,parent_email,coach_id))`,
  `CREATE INDEX IF NOT EXISTS private_conversations_parent ON private_conversations(parent_email,created)`,
  `CREATE INDEX IF NOT EXISTS private_conversations_coach ON private_conversations(coach_id,created)`,
@@ -31,17 +45,18 @@ export async function identity(request,db,role){
 }
 // Every read, write and delivery checks BOTH participants, current team policy and
 // organization mapping. School teams cannot be enabled via this allowlist.
-export const eligibleSQL=`SELECT t.team_code,t.organization_id,t.name AS team_name,a.id AS coach_id,a.name AS coach_name,a.email AS coach_email
+function eligibleTeams(staff){return `SELECT t.team_code,t.organization_id,t.name AS team_name,a.id AS coach_id,a.name AS coach_name,a.email AS coach_email
  FROM private_message_teams t JOIN school_teams s ON s.team_code=t.team_code
- JOIN private_message_coaches pc ON pc.team_code=t.team_code
+ JOIN ${staff} pc ON pc.team_code=t.team_code
  JOIN coach_access_requests a ON a.id=pc.coach_id
  WHERE t.enabled=1 AND s.kind IN ('rec','travel') AND s.school_id IS NULL
- AND pc.active=1 AND a.status='approved'`;
+ AND pc.active=1 AND a.status='approved'`;}
+export const eligibleSQL=eligibleTeams('private_message_coaches');
 // The legacy pilot can stay staged while individual approved travel coaches opt in.
 export function travelRestriction(env){
- return env.PRIVATE_MESSAGING_ENABLED==='true'?'':" AND s.kind='travel' AND lower(a.role) IN ('head coach','assistant coach','coach') AND a.team_code=t.team_code AND EXISTS(SELECT 1 FROM travel_pep_activations x WHERE x.team_code=t.team_code AND x.coach_id=a.id)";
+ return env.PRIVATE_MESSAGING_ENABLED==='true'?'':" AND s.kind='travel' AND lower(a.role) IN ('head coach','assistant coach','coach') AND a.team_code=t.team_code AND (EXISTS(SELECT 1 FROM travel_pep_activations x WHERE x.team_code=t.team_code AND x.coach_id=a.id) OR EXISTS(SELECT 1 FROM travel_pep_staff_teams h WHERE h.team_code=t.team_code))";
 }
-export function messagingTeams(env){return eligibleSQL+travelRestriction(env)}
+export function messagingTeams(env){return eligibleTeams('pep_messaging_staff')+travelRestriction(env)}
 export async function actorCanMessage(db,env,actor){
  if(env.PRIVATE_MESSAGING_ENABLED==='true')return true;
  const scope=messagingTeams(env);
