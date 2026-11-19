@@ -4,7 +4,7 @@ import {parseCoachRoster,parseCoachSchedule} from '../assets/coach-csv.mjs';
 import {ensureCoachCore,sha256} from '../functions/_lib/coach-auth.js';
 import {accessSchema} from '../functions/_lib/parent-access.js';
 import {schoolSchema} from '../functions/_lib/school-access.js';
-import {onRequestGet as readRoster} from '../functions/api/season-rosters.js';
+import {onRequestGet as readRoster,onRequestPost as editRoster} from '../functions/api/season-rosters.js';
 import {onRequestPost as importGuardians} from '../functions/api/guardian-import.js';
 import {authenticate} from '../functions/api/admin-dashboard.js';
 import {onRequestPost as upload} from '../functions/api/coach-upload.js';
@@ -69,5 +69,16 @@ try{
  }
  assert.equal((await send('Roster','%PDF-1.4',undefined,undefined,'sheet.pdf')).status,200);
  assert.equal((await send('Roster','wrong',undefined,undefined,'sheet.png')).status,415);
+ const modify=async(action,revision)=>editRoster({request:new Request('https://kanabsports.com/api/season-rosters',{method:'POST',headers:{Origin:'https://kanabsports.com',cookie:'ks_coach=test-token'},body:JSON.stringify({id:approved.document_id,action,revision,student_ref:detail.student_ref,name:'Maya Jensen',grade:'9'})}),env});
+ const getDetail=async()=>await (await list('?id='+approved.document_id)).json();
+ const rev=(await getDetail()).revision;
+ sqlite.exec("UPDATE coach_access_requests SET role='Assistant Coach' WHERE id='coach'");
+ assert.equal((await modify('remove',rev)).status,403);
+ sqlite.exec("UPDATE coach_access_requests SET role='Head Coach' WHERE id='coach'");
+ assert.equal((await modify('edit',rev)).status,200);
+ assert.equal((await getDetail()).players[0].student_name,'Maya Jensen');
+ assert.equal((await modify('remove',rev)).status,409);
+ assert.equal((await modify('remove',(await getDetail()).revision)).status,200);
+ assert.equal((await getDetail()).players.length,0);
  await Promise.all(pending);console.log('PASS: downloaded CSV headers, two guardians, dates and locations, invalid data, authenticated uploads, school gate, saved private roster, pending review, no parent auto-enrollment, server-side parsing, failed notification cleanup. No external messages sent.');
 }finally{globalThis.fetch=originalFetch;sqlite.close()}
