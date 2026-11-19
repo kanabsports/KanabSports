@@ -14,11 +14,26 @@ async function rosters(){
 $('approvedRoster').onchange=async()=>{
  const id=$('approvedRoster').value;$('playerCards').replaceChildren();$('rosterInfo').textContent='';if(!id)return;
  try{
-  const {players}=await api('season-rosters?id='+encodeURIComponent(id));if(id!==$('approvedRoster').value)return;
+  const {players,canEdit,revision}=await api('season-rosters?id='+encodeURIComponent(id));if(id!==$('approvedRoster').value)return;
   for(const player of players){
     const card=document.createElement('details');card.append(node('summary',player.student_name));
     for(const g of player.guardians)card.append(node('p',[g.name,g.email].filter(Boolean).join(' · ')));
     if(!player.guardians.length)card.append(node('p','No guardian contact supplied.'));
+    if(canEdit){
+     const name=node('input',''),grade=node('input','');
+     name.value=player.student_name;name.maxLength=120;grade.value=player.grade;grade.maxLength=30;
+     for(const [label,input] of [['Player name',name],['Grade',grade]]){const field=node('label',label+' ');field.append(input);card.append(field)}
+     const save=node('button','Save player changes'),remove=node('button','Remove player');
+     async function update(action){
+      if(action==='remove'&&!confirm('Remove '+player.student_name+' from this season roster?'))return;
+      save.disabled=remove.disabled=true;
+      try{
+       await api('season-rosters',{action,id,revision,student_ref:player.student_ref,name:name.value,grade:grade.value});
+       if(id===$('approvedRoster').value){await $('approvedRoster').onchange();$('rosterInfo').textContent=action==='remove'?'Player removed from this roster.':'Player updated.'}
+      }catch(e){$('rosterInfo').textContent=e.message;save.disabled=remove.disabled=false}
+     }
+     save.onclick=()=>update('edit');remove.onclick=()=>update('remove');card.append(save,remove);
+    }
     $('playerCards').append(card);
   }
  }catch(e){if(id===$('approvedRoster').value)$('rosterInfo').textContent=e.message;}
