@@ -3,9 +3,9 @@ export function csvRows(text){
  text=text.replace(/^\uFEFF/,'');const rows=[];let row=[],field='',quoted=false,closed=false;
  for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'){if(text[i+1]==='"'){field+='"';i++}else{quoted=false;closed=true}}else field+=c;continue}if(c==='"'){if(field||closed)throw Error('Invalid CSV quotes.');quoted=true;continue}if(c===','||c==='\n'||c==='\r'){row.push(field.trim());field='';closed=false;if(c!==','){if(row.some(Boolean))rows.push(row);row=[];if(c==='\r'&&text[i+1]==='\n')i++}continue}if(closed)throw Error('Unexpected text after a CSV quote.');field+=c}
  if(quoted)throw Error('Unclosed CSV quote.');row.push(field.trim());if(row.some(Boolean))rows.push(row);
- const headers=(rows.shift()||[]).map(h=>h.toLowerCase().replace(/[^a-z0-9]/g,''));if(!headers.length)throw Error('The CSV needs column headings.');
+ const originalHeaders=rows.shift()||[];const headers=originalHeaders.map(h=>h.toLowerCase().replace(/[^a-z0-9]/g,''));if(!headers.length)throw Error('The CSV needs column headings.');
  if(rows.some(r=>r.length!==headers.length))throw Error('A row has the wrong number of columns. Save the file as CSV and try again.');
- return {headers,rows};
+ return {headers,rows,originalHeaders};
 }
 const value=(headers,row,...names)=>{const i=headers.findIndex(h=>names.includes(h));return i<0?'':row[i]||''};
 export function parseCoachRoster(text){

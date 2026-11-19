@@ -21,3 +21,7 @@ assert.equal((await call(sheets,'','schoolCoach',sheet)).status,403);
 assert.equal((await (await call(sheets,'','assistantA')).json()).sheets.length,1);
 assert.equal((await (await call(sheets,'','coachB')).json()).sheets.length,0);
 console.log('PASS coach stats, team isolation, revision conflict, public details and team-season sheet.');
+const {mapRoster}=await import('../assets/hudl-roster.mjs');
+const hudl=mapRoster('jersey,firstname,lastname,classyear\n4,Avery,Sample,2027','Last Name,First Name,Jersey Number,Graduation Year,Email');
+assert.equal(hudl.csv.split('\r\n')[1],'"Sample","Avery","4","2027",""');
+assert.deepEqual(hudl.missing,['Email']);
