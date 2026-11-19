@@ -24,8 +24,8 @@ sqlite.prepare("INSERT INTO coach_sessions(id,coach_id,email,token_hash,expires_
 const env={SPORTS_DB:db,RESEND_API_KEY:'mock'},pending=[];let mails=0;
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async(url)=>{assert.equal(url,'https://api.resend.com/emails');mails++;return Response.json({id:'mock'})};
-async function send(type,text,cookie='ks_coach=test-token',origin='https://kanabsports.com'){
- const body=new FormData();body.set('document_type',type);body.set('season','2026–27');body.set('name','Forged coach');body.set('email','forged@example.test');body.set('schedule_json','[{"date":"2026-01-01","opponent":"Forged"}]');body.set('pdf',new File([text],'download.csv',{type:'text/csv'}));
+async function send(type,text,cookie='ks_coach=test-token',origin='https://kanabsports.com',filename='download.csv'){
+ const body=new FormData();body.set('document_type',type);body.set('season','2026–27');body.set('name','Forged coach');body.set('email','forged@example.test');body.set('schedule_json','[{"date":"2026-01-01","opponent":"Forged"}]');body.set('pdf',new File([text],filename));
  return upload({request:new Request('https://kanabsports.com/api/coach-upload',{method:'POST',headers:{origin,cookie},body}),env,waitUntil(p){pending.push(p)}});
 }
 try{
@@ -61,5 +61,13 @@ try{
  assert.equal((await send('Schedule',schedule.replace('10/17/2026','invalid'))).status,400);assert.equal(mails,2);
  sqlite.prepare("UPDATE school_teams SET kind='school'").run();assert.equal((await send('Roster',roster)).status,403);sqlite.prepare("UPDATE school_teams SET kind='travel'").run();
  globalThis.fetch=async()=>{throw Error('Synthetic network failure')};assert.equal((await send('Roster',roster)).status,502);assert.equal(sqlite.prepare('SELECT count(*) n FROM coach_roster_uploads').get().n,1);assert.equal(sqlite.prepare('SELECT count(*) n FROM coach_documents').get().n,2);
+ globalThis.fetch=async()=>Response.json({id:'mock'});
+ const picture=Uint8Array.from([137,80,78,71,13,10,26,10]);
+ for(const type of ['Roster','Schedule']){
+  const attachment=await send(type,picture,undefined,undefined,'sheet.png');
+  assert.equal(attachment.status,200);
+ }
+ assert.equal((await send('Roster','%PDF-1.4',undefined,undefined,'sheet.pdf')).status,200);
+ assert.equal((await send('Roster','wrong',undefined,undefined,'sheet.png')).status,415);
  await Promise.all(pending);console.log('PASS: downloaded CSV headers, two guardians, dates and locations, invalid data, authenticated uploads, school gate, saved private roster, pending review, no parent auto-enrollment, server-side parsing, failed notification cleanup. No external messages sent.');
 }finally{globalThis.fetch=originalFetch;sqlite.close()}
