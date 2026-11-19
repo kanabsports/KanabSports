@@ -10,7 +10,7 @@ export async function onRequest({request,env}){
  const canEdit=['head coach','coach'].includes(coach.role.toLowerCase());
  if(request.method==='GET'){
   const rows=await db.prepare('SELECT season,sheet_id FROM team_season_sheets WHERE team_code=? ORDER BY season DESC').bind(coach.team_code).all();
-  return json({team:coach.team_name||coach.organization,canEdit,sheets:rows.results});
+  return json({team:coach.team_name||coach.organization,teamCode:coach.team_code,canEdit,sheets:rows.results});
  }
  if(request.method!=='POST'||!canEdit||request.headers.get('Origin')!==url.origin)return json({error:'A lead coach must connect the season sheet.'},403);
  const input=await request.json(),season=String(input.season||'').trim().replace(/\s+/g,' '),match=String(input.link||'').trim().match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]{15,120})(?:[/?#].*)?$/);
