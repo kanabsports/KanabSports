@@ -6,6 +6,19 @@ const source=` FROM coach_roster_uploads r JOIN coach_documents d ON d.id=r.docu
       WHERE d.status='approved' AND d.document_type='Roster' AND c.status='approved' AND s.kind IN ('rec','travel') AND s.school_id IS NULL
       AND d.team=COALESCE(NULLIF(c.team_name,''),c.organization) AND d.sport=c.sport`;
 
+const schoolReference={document_id:'reference-khs-girls-2026-27',team:'KHS Lady Cowboys',season:'2026–27',reference:true};
+
+// The original uploader, their accepted assistant, or the sponsoring head coach
+// may view this team's roster. Private contacts never follow a public team code alone.
+async function coachScope(db,editing=false){
+ const hasInvites=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='coach_assistant_invites'").first();
+ const invite=hasInvites?` OR EXISTS(SELECT 1 FROM coach_assistant_invites i WHERE i.status='accepted' AND i.team_code=c.team_code
+  AND ((i.sponsor_id=c.id AND i.accepted_coach_id=viewer.id) OR (i.sponsor_id=viewer.id AND i.accepted_coach_id=c.id)))`:'';
+ const role=editing?" AND lower(viewer.role)='head coach'":'';
+ return source+` AND EXISTS(SELECT 1 FROM coach_access_requests viewer WHERE viewer.id=? AND viewer.status='approved'
+  AND viewer.team_code=c.team_code ${role} AND (viewer.id=c.id OR (viewer.email<>'' AND lower(viewer.email)=lower(c.email))${invite}))`;
+}
+
 export async function onRequestGet({request,env}){
   const db=env.SPORTS_DB;
   if(!db)return json({error:'Roster storage unavailable.'},503);
@@ -14,12 +27,17 @@ export async function onRequestGet({request,env}){
     const actor=owner?await authenticate(request,db):await getCoach(request,db);
     if(!actor)return json({error:owner?'Sign in to the owner account.':'Sign in with your verified coach account.'},401);
     const id=query.get('id');
-    if(!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='coach_roster_uploads'").first())return id?json({error:'Roster unavailable.'},404):json({rosters:[]});
-    const scope=source+(owner?'':' AND c.id=?'),args=owner?[]:[actor.id];
+    const references=!owner&&actor.team_code==='KS-SY7AA4'&&actor.name.trim().toLowerCase()==='clayton cutler'?[schoolReference]:[];
+    if(id===schoolReference.document_id&&references.length){
+      const {winterSportsData}=await import('../../assets/school-data.js');
+      return json({roster:schoolReference,players:winterSportsData.girls.roster.map(student_name=>({student_name})),canEdit:false});
+    }
+    if(!await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='coach_roster_uploads'").first())return id?json({error:'Roster unavailable.'},404):json({rosters:references});
+    const scope=owner?source:await coachScope(db),args=owner?[]:[actor.id];
     const fields='r.document_id,d.team,d.season,c.team_code';
     if(!id){
       const rosters=(await db.prepare('SELECT '+fields+scope+' ORDER BY r.created DESC LIMIT 100').bind(...args).all()).results;
-      return json({rosters});
+      return json({rosters:[...rosters,...references]});
     }
     const row=await db.prepare('SELECT '+fields+',r.payload_json'+scope+' AND r.document_id=?').bind(...args,id).first();
     if(!row)return json({error:'Roster unavailable.'},404);
@@ -38,7 +56,7 @@ export async function onRequestPost({request,env}){
   if(!coach||coach.role.toLowerCase()!=='head coach')return json({error:'Head coach access required.'},403);
   const body=await request.json().catch(()=>null);
   if(!body||!['edit','remove'].includes(body.action)||typeof body.student_ref!=='string'||!body.student_ref||typeof body.id!=='string')return json({error:'Choose a roster and player.'},400);
-  const scope=source+" AND c.id=? AND lower(c.role)='head coach' AND r.document_id=?";
+  const scope=await coachScope(db,true)+" AND r.document_id=?";
   const args=[coach.id,body.id];
   const row=await db.prepare('SELECT r.payload_json'+scope).bind(...args).first();
   if(!row)return json({error:'Roster unavailable.'},404);

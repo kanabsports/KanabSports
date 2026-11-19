@@ -2,7 +2,7 @@ import {coachFileType,validCoachFile} from '../../assets/coach-file.mjs';
 import {getCoach,json} from '../_lib/coach-auth.js';
 import {schema,eligibleSQL} from '../_lib/private-messages.js';
 export async function onRequest({request,env}){
- if(env.PRIVATE_MESSAGING_ENABLED!=='true'||!env.SPORTS_DB)return json({error:'Coach tools pilot is not enabled.'},503);
+ if(env.PRIVATE_MESSAGING_ENABLED!=='true'||!env.SPORTS_DB)return json({error:'Private stats uploads are unavailable.'},503);
  try{const db=env.SPORTS_DB,url=new URL(request.url),coach=await getCoach(request,db);if(!coach)return json({error:'Sign in with your approved coach account.'},401);await schema(db);
  await db.prepare('CREATE TABLE IF NOT EXISTS coach_stats_pdfs(id TEXT PRIMARY KEY,team_code TEXT NOT NULL,organization_id TEXT NOT NULL,coach_id TEXT NOT NULL,filename TEXT NOT NULL,object_key TEXT NOT NULL,created INTEGER NOT NULL)').run();
  const teams=(await db.prepare(eligibleSQL+' AND a.id=?').bind(coach.id).all()).results||[];

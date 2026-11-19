@@ -3,7 +3,7 @@ import {schema,eligibleSQL} from '../_lib/private-messages.js';
 import {scheduleEvents,scheduleSchema} from '../_lib/team-schedule.js';
 import {notifySchedule} from '../_lib/schedule-notifications.js';
 export async function onRequest({request,env,waitUntil}){
- if(env.PRIVATE_MESSAGING_ENABLED!=='true'||!env.SPORTS_DB)return json({error:'Team tools pilot is not enabled.'},503);
+ if(env.PRIVATE_MESSAGING_ENABLED!=='true'||!env.SPORTS_DB)return json({error:'Schedule editing is unavailable.'},503);
  try{const db=env.SPORTS_DB,url=new URL(request.url),coach=await getCoach(request,db);if(!coach)return json({error:'Sign in with your approved coach account.'},401);await schema(db);await scheduleSchema(db);
  if(request.method==='GET'){const teams=(await db.prepare(eligibleSQL+' AND a.id=?').bind(coach.id).all()).results||[];for(const t of teams)t.events=await scheduleEvents(db,t.team_code);return json({teams,can_edit:canManageAssistants(coach)});}
  if(request.method!=='POST')return json({error:'Method not allowed.'},405);if(request.headers.get('Origin')!==url.origin)return json({error:'Open the Coach Portal to edit schedules.'},403);

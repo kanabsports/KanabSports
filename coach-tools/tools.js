@@ -8,13 +8,21 @@ async function stats(){const d=await api('coach-stats');$('statsTeam').replaceCh
 $('stats').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const form=new FormData();form.set('team_code',$('statsTeam').value);form.set('pdf',$('pdf').files[0]);const d=await api('coach-stats',form);$('status').textContent=d.message;await stats();}catch(e){error(e);}finally{button.disabled=false;}};
 async function rosters(){
  const {rosters}=await api('season-rosters');
- for(const r of rosters)$('approvedRoster').add(new Option(r.team+' · '+r.season,r.document_id));
- if(!rosters.length)$('rosterInfo').textContent='Your rec or travel roster will appear here after review.';
+ const picker=$('approvedRoster');
+ if(!rosters.length){$('rosterInfo').textContent='No approved roster is available for this account yet. Upload a team roster to start review.';return}
+ picker.replaceChildren(...rosters.map(r=>new Option(r.team+' · '+r.season+(r.reference?' · School reference':''),r.document_id)));
+ $('rosterPicker').hidden=false;
+ await picker.onchange();
 }
 $('approvedRoster').onchange=async()=>{
  const id=$('approvedRoster').value;$('playerCards').replaceChildren();$('rosterInfo').textContent='';if(!id)return;
  try{
-  const {players,canEdit,revision}=await api('season-rosters?id='+encodeURIComponent(id));if(id!==$('approvedRoster').value)return;
+  const {players,canEdit,revision,roster}=await api('season-rosters?id='+encodeURIComponent(id));if(id!==$('approvedRoster').value)return;
+  if(roster.reference){
+   $('rosterInfo').textContent=players.length+' players · Published school roster. Your private travel roster is managed separately.';
+   const list=document.createElement('ul');for(const player of players)list.append(node('li',player.student_name));
+   $('playerCards').append(list);return;
+  }
   for(const player of players){
     const card=document.createElement('details');card.append(node('summary',player.student_name));
     for(const g of player.guardians)card.append(node('p',[g.name,g.email].filter(Boolean).join(' · ')));
@@ -38,4 +46,4 @@ $('approvedRoster').onchange=async()=>{
   }
  }catch(e){if(id===$('approvedRoster').value)$('rosterInfo').textContent=e.message;}
 };
-await Promise.allSettled([rosters().catch(e=>$('rosterInfo').textContent=e.message),directory().catch(error),schedules().catch(error),stats().catch(error)]);
+await Promise.allSettled([rosters().catch(e=>$('rosterInfo').textContent=e.message),directory().catch(e=>$('families').textContent=e.message),schedules().catch(e=>$('schedules').textContent=e.message),stats().catch(e=>$('files').textContent=e.message)]);
