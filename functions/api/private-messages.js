@@ -21,6 +21,8 @@ export async function onRequest({request,env,waitUntil}){
    if(!Number.isSafeInteger(before)||before<1)return json({error:'Invalid page.'},400);
    const rows=(await db.prepare(`SELECT m.sequence,m.id,m.sender_role,m.sender_name,m.body,m.category,m.subject,m.created,n.status AS notification_status,n.email_status,n.push_status FROM private_messages m LEFT JOIN private_message_notices n ON n.message_id=m.id WHERE m.conversation_id=? AND m.sequence<? ORDER BY m.sequence DESC LIMIT 51`).bind(id,before).all()).results;
    const messages=rows.slice(0,50).reverse();
+   if(messages.length)await db.prepare(`INSERT OR IGNORE INTO private_message_reads(message_id,role,identity,read)
+    SELECT id,?,?,? FROM private_messages WHERE conversation_id=? AND sender_role<>? AND sequence BETWEEN ? AND ?`).bind(actor.role,actor.id,Date.now(),id,actor.role,messages[0].sequence,messages.at(-1).sequence).run();
    return json({conversation:{id:c.id,team:c.team_name,coach:c.coach_name},messages,older:rows.length>50?messages[0].sequence:null});
   }
   const choices=actor.role==='parent'?(await db.prepare(messagingTeams(env)+` AND EXISTS(SELECT 1 FROM guardian_memberships g WHERE g.team_code=t.team_code AND g.email=? AND g.status='approved' AND g.expires>?) ORDER BY t.name,a.name`).bind(actor.id,Date.now()).all()).results:[];

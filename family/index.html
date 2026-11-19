@@ -61,6 +61,7 @@
 import {mountFamilySharing} from '/assets/family-sharing.js';
 import {conflicts,eventKey} from '/assets/family-event-times.mjs';
 import {createDriverPlans} from '/assets/family-drivers.js';
+import {setAppBadgeCount,visitAlerts} from '/assets/pep-badge.mjs';
 
 import {loadSchoolNotices} from "/assets/school-parent-notices.mjs";
 import {mountPush} from "/assets/family-push.js?v=20261119-device-test-v2";
@@ -68,7 +69,7 @@ import {CONNECTIONS,categoryLabel,eventSort,timeMinutes} from "/assets/family-co
 (()=>{'use strict';
 const KEY='kanabSportsParentTeamsV1',TRASH='kanabSportsParentTrashV1',PROFILE='kanabSportsParentProfileV1';
 const registry=structuredClone(CONNECTIONS);
-let feedInFlight=false,feedError='',feedLoaded=false,activePane='home',activeCategory=sessionStorage.getItem('ksFamilyCategory')||'',activeChild='';
+let feedInFlight=false,feedError='',feedLoaded=false,activePane='home',activeCategory=sessionStorage.getItem('ksFamilyCategory')||'',activeChild='',unreadTotal=0,unreadUpdates=0;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Denver',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -135,8 +136,7 @@ function render(filterChild=activeChild){
  const messages=[...new Map(scope.flatMap(s=>(teamData(s)?.messages||[]).map(m=>({s,m,t:teamData(s)}))).map(x=>[x.s.code+'|'+x.m.id,x])).values()].sort((a,b)=>b.m.created-a.m.created);
  $('messageList').innerHTML=messages.length?messages.map(({s,m,t})=>'<div class="message"><strong>'+esc(t.name)+'</strong><small>'+esc(m.author+' · '+(m.date||''))+'</small><p>'+esc(m.body)+'</p>'+(!CONNECTIONS[s.code]?'<button class="btn ghost small" data-ack-team="'+esc(s.code)+'" data-ack-message="'+esc(m.id)+'" '+(m.acknowledged?'disabled':'')+'>'+(m.acknowledged?'Acknowledged':'Got it')+'</button>':'')+'</div>').join(''):'';
  $('homeUpdates').innerHTML=messages.length?messages.slice(0,2).map(x=> '<div class="home-update-item"><div class="update-icon">!</div><div class="update-copy"><strong>'+esc(x.t.name)+'</strong><small>'+esc(x.m.date||'Latest update')+'</small><div style="margin-top:5px;line-height:1.45">'+esc(x.m.body.slice(0,160)+(x.m.body.length>160?'…':''))+'</div></div><button class="update-action" type="button" data-go="messages">Open →</button></div>').join(''):(saved.length?'<div class="caught-up"><span class="caught-up-mark">✓</span><span><strong style="color:var(--ink)">You’re caught up.</strong><br>No new coach updates or schedule changes.</span></div>':'<div class="caught-up"><span class="caught-up-mark">+</span><span><strong style="color:var(--ink)">Updates will live here.</strong><br>Add a team and you won’t have to hunt through texts for changes.</span></div>');
- const unread=messages.filter(x=>!CONNECTIONS[x.s.code]&&!x.m.acknowledged).length;
- const badge=$('updatesBadge');if(badge){badge.hidden=!unread;badge.textContent=String(unread)}
+ paintUnread();
  const name=account?.name||profile().name||'';$('welcomeTitle').textContent=activeCategory?(categoryLabel(activeCategory)+' · What’s next'):name?'Hi, '+name.split(' ')[0]+'.':'Your week';
  renderAccount();
 }
@@ -182,7 +182,10 @@ async function loadAthleteControls(){
   }box.hidden=false;
  }catch{box.hidden=true;}
 }
-function go(name){activePane=name;if(name==='kids')loadAthleteControls();if(name==='messages')import('/assets/pep-badge.mjs').then(m=>m.visitAlerts('/sw.js'));$('connectionTabs').hidden=['kids','settings'].includes(name)||!read().some(x=>teamData(x));document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);document.querySelectorAll('.rail button[data-pane]').forEach(b=>{b.classList.toggle('active',b.dataset.pane===name);if(b.dataset.pane===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});window.scrollTo({top:0,behavior:'smooth'})}
+function paintUnread(){const badge=$('updatesBadge');if(badge){badge.hidden=!unreadUpdates;badge.textContent=String(unreadUpdates)}}
+function setUnread(value,updates=value){const count=Number(value),updateCount=Number(updates);unreadTotal=Number.isSafeInteger(count)&&count>0?count:0;unreadUpdates=Number.isSafeInteger(updateCount)&&updateCount>0?updateCount:0;paintUnread();setAppBadgeCount(unreadTotal)}
+async function loadUnread(){if(!account){setUnread(0);return}try{const r=await fetch('/api/family-unread',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json();setUnread(d.unread,d.updates)}catch{/* Keep the last confirmed count during a temporary connection failure. */}}
+function go(name){activePane=name;if(name==='kids')loadAthleteControls();if(name==='messages')visitAlerts('/sw.js');$('connectionTabs').hidden=['kids','settings'].includes(name)||!read().some(x=>teamData(x));document.querySelectorAll('.pane').forEach(p=>p.hidden=p.id!=='pane-'+name);document.querySelectorAll('.rail button[data-pane]').forEach(b=>{b.classList.toggle('active',b.dataset.pane===name);if(b.dataset.pane===name)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});window.scrollTo({top:0,behavior:'smooth'})}
 function openAdd(prefill='',child=''){addMode='team';$('addPanel').querySelector('.eyebrow').textContent='SCHOOL & REC';$('addPanel').hidden=false;$('connectionFields').hidden=false;$('schoolCode').value='';$('teamCode').value=prefill;$('childLabel').value=child;$('addTitle').textContent='Connect your sports.';$('addTitle').nextElementSibling.textContent='Enter a school code, a rec/travel team code, or both. You only need the ones your family uses.';$('addForm').querySelector('[type=submit]').textContent='Save Connections';$('addStatus').textContent='';setTimeout(()=>$('schoolCode').focus(),20)}
 function openKid(){openAdd();addMode='kid';$('addPanel').querySelector('.eyebrow').textContent='ADD A KID';$('addTitle').textContent='Add a kid.';$('addTitle').nextElementSibling.textContent='Use a nickname, initials, or leave it blank. You can connect school or rec later.';$('connectionFields').hidden=true;$('addForm').querySelector('[type=submit]').textContent='Add Kid';setTimeout(()=>$('childLabel').focus(),25)}
 async function resolveTeamCode(code,refresh=false){
@@ -217,13 +220,13 @@ function shareTeam(id){const s=normalized(read()).find(x=>x.entryId===id),t=s&&t
 function removeTeam(id){const a=normalized(read()),i=a.findIndex(s=>s.entryId===id);if(i<0)return;const [removed]=a.splice(i,1);localStorage.setItem(TRASH,JSON.stringify({removed,expires:Date.now()+48*3600000}));write(a);$('undo').hidden=false;setTimeout(()=>$('undo').hidden=true,8000)}
 async function api(body){const r=await fetch('/api/parent-account',{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});const d=await r.json();if(!r.ok)throw Error(d.error||'Please try again.');return d}
 async function loadAccount(){
- try{const d=await api();if(!d.signedIn){account=null;document.dispatchEvent(new CustomEvent('pep-parent-session',{detail:false}));loadAthleteControls();familySharing.load();$('schoolParentNotices').replaceChildren();renderAccount();await driverPlans.load();return}account=d.account;document.dispatchEvent(new CustomEvent('pep-parent-session',{detail:true}));if(activePane==='kids')loadAthleteControls();await loadSchoolNotices($('schoolParentNotices'),loadFeed);
+ try{const d=await api();if(!d.signedIn){account=null;setUnread(0);document.dispatchEvent(new CustomEvent('pep-parent-session',{detail:false}));loadAthleteControls();familySharing.load();$('schoolParentNotices').replaceChildren();renderAccount();await driverPlans.load();return}account=d.account;document.dispatchEvent(new CustomEvent('pep-parent-session',{detail:true}));if(activePane==='kids')loadAthleteControls();await loadSchoolNotices($('schoolParentNotices'),loadFeed);
  const remote=(d.family||[]).map(x=>({code:x.team_code,child:x.child_name,addedAt:x.created,entryId:x.entry_id}));
  const owner=localStorage.getItem('ksFamilyOwner');
  const guest=owner?[]:normalized(read());const merged=[...remote];
  guest.forEach(r=>{if(!merged.some(x=>x.entryId===r.entryId||x.code===r.code&&x.child===r.child))merged.push(r)});
  const inviteEntry=normalized(read()).filter(x=>x.entryId===newInviteId);inviteEntry.forEach(r=>{if(!merged.some(x=>x.code===r.code&&x.child===r.child))merged.push(r)});
- saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);await hydrateCodes(merged.map(x=>x.code));render();document.dispatchEvent(new Event('familyconnectionschanged'));if(guest.length||inviteEntry.length)syncFamily();await driverPlans.load();
+ saveNormalized(merged);localStorage.setItem('ksFamilyOwner',account.email);await hydrateCodes(merged.map(x=>x.code));await loadUnread();render();document.dispatchEvent(new Event('familyconnectionschanged'));if(guest.length||inviteEntry.length)syncFamily();await driverPlans.load();
  }catch{$('saveStatus').textContent='Could not check your account. Your saved teams on this device are still available.';renderAccount()}
 }
 function syncFamily(){if(!account)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>{
@@ -234,7 +237,7 @@ function accountView(mode){$('accountLogin').hidden=mode!=='login';$('accountSta
 function openAccount(mode='login'){$('accountPanel').hidden=false;accountView(mode);['accountStatus','loginStatus','codeStatus'].forEach(id=>$(id).textContent='');const p=profile();$('parentName').value=account?.name||p.name||'';$('parentEmail').value=account?.email||p.email||'';$('loginEmail').value=account?.email||p.email||'';setTimeout(()=>$(mode==='login'?'loginEmail':'parentName').focus(),20)}
 function closeAccount(){$('accountPanel').hidden=true;['parentCode','loginPin','newParentPin','confirmParentPin'].forEach(id=>$(id).value='')}
 $('schoolMessagePreferences').onclick=async()=>{if(!account){openAccount();return}await loadSchoolNotices($('schoolParentNotices'),loadFeed,true);go('home');$('schoolParentNotices').scrollIntoView({behavior:'smooth'});};
-document.addEventListener('click',async e=>{const b=e.target.closest('[data-ack-message]');if(!b)return;b.disabled=true;try{const r=await fetch('/api/family-message-receipts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({team_code:b.dataset.ackTeam,message_id:b.dataset.ackMessage})});const d=await r.json();if(!r.ok)throw Error(d.error);await loadFeed()}catch(err){b.disabled=false;b.textContent='Retry acknowledgment';$('saveStatus').textContent=err.message}});
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-ack-message]');if(!b)return;b.disabled=true;try{const r=await fetch('/api/family-message-receipts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({team_code:b.dataset.ackTeam,message_id:b.dataset.ackMessage})});const d=await r.json();if(!r.ok)throw Error(d.error);setUnread(d.unread,d.updates);await loadFeed()}catch(err){b.disabled=false;b.textContent='Retry acknowledgment';$('saveStatus').textContent=err.message}});
 $('connectApproved').onclick=async()=>{if(!account){openAccount();return}const b=$('connectApproved');b.disabled=true;try{clearTimeout(syncTimer);await syncChain;await api({action:'save_family',entries:normalized(read()).map(x=>({entry_id:x.entryId,team_code:x.code,child_name:x.child,created:x.addedAt}))});const d=await api({action:'connect_approved'});await loadAccount();$('connectStatus').textContent=d.message;go('home')}catch(e){$('connectStatus').textContent=e.message}finally{b.disabled=false}};
 $('managePin').onclick=()=>openAccount('setup');$('returningSignIn').onclick=()=>openAccount();$('newFamilyAccount').onclick=()=>openAccount('setup');
 $('createAccount').onclick=$('resetPin').onclick=()=>{$('parentEmail').value=$('loginEmail').value;accountView('setup');$('parentName').focus()};
@@ -271,7 +274,7 @@ async function loadFeed(){
  await driverPlans.load();
  let failed=false;
  try{const dynamic=normalized(read()).map(x=>x.code).filter(code=>code.startsWith('KS-'));await hydrateCodes(dynamic,true)}catch{failed=true}
- const locked=normalized(read()).some(x=>x.code!=='__KID__'&&!registry[x.code]);
+ const locked=normalized(read()).some(x=>x.code!=='__KID__'&&!registry[x.code]);await loadUnread();
  feedLoaded=true;feedError=locked?'Some private teams need guardian approval. Sign in, then use Add Team with your code to request access.':failed?'Some coach updates could not refresh. Please try again shortly.':'';render();feedInFlight=false;
 }
  mountPush($('pushPanel'),()=>normalized(read()).filter(x=>x.code!=='__KID__').map(x=>x.code));

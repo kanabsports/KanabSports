@@ -4,6 +4,7 @@ import {sha256} from '../_lib/coach-auth.js';
 import {teamPolicy} from '../_lib/school-access.js';
 import {accessSchema,parentSession,hasMembership} from '../_lib/parent-access.js';
 import {ensureCoachCore,clean,json} from '../_lib/coach-auth.js';
+import {teamMessagesSchema} from '../_lib/family-unread.js';
 
 export async function onRequestGet(context){const response=await loadTeam(context);if(response.ok){try{const db=context.env.SPORTS_DB,code=new URL(context.request.url).searchParams.get('code')?.toUpperCase(),policy=await teamPolicy(db,code),parent=await parentSession(context.request,db);if(parent&&['rec','travel'].includes(policy?.kind)){await pilotSchema(db);await db.prepare('INSERT OR IGNORE INTO pep_family_activity VALUES(?,?,?)').bind(code,await sha256(parent.email),new Date().toLocaleDateString('en-CA',{timeZone:'America/Denver'})).run()}}catch{ /* Measurement must not interrupt family access. */ }}return response}
 // Internal principal is supplied only after calendar/driver token verification.
@@ -61,9 +62,7 @@ export async function loadTeam({request,env},principal=null,{includeCancelled=fa
 }
 
 export async function teamSchema(db){
-  await db.prepare(`CREATE TABLE IF NOT EXISTS coach_team_messages(
-    id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,team_code TEXT NOT NULL,author TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`).run();
+  await teamMessagesSchema(db);
   await db.prepare(`CREATE TABLE IF NOT EXISTS coach_schedule_games(
     id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,date TEXT NOT NULL,opponent TEXT NOT NULL,time TEXT,site TEXT,result TEXT,source_document_id TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`).run();
