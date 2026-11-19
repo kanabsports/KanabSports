@@ -33,12 +33,25 @@ async function open(){
   if(role==='student'&&location.hash){const token=location.hash.slice(1);window.history.replaceState(null,'',location.pathname+location.search);await api('/api/student-pep-access',{action:'redeem',token});}
   const d=await api(base);channels=d.channels;
   $('signin').hidden=true;$('logout').hidden=role!=='student';$('app').hidden=!channels.length;
-  if(!channels.length){status('No approved audiences are available for this account.');return;}
+  $('activateStaff').hidden=true;
+  if(!channels.length){
+   if(role==='coach'){
+    const setup=await api('/api/coach-pep-talk');
+    status(setup.message||'No coaching staff conversation is available for this account.');
+    $('activateStaff').hidden=!setup.available||setup.active;
+   }else status('No approved audiences are available for this account.');
+   return;
+  }
   $('channels').replaceChildren(...channels.map((c,i)=>new Option(label(c),String(i))));
   const target=channels.findIndex(c=>(teamFilter===null||c.team_code===teamFilter)&&(orgFilter===null||c.organization_id===orgFilter)&&(groupFilter===null||c.enrollment===groupFilter));
   if(target===-1&&(teamFilter||groupFilter)){status('This audience is no longer available.');$('app').hidden=true;return;}
   $('channels').selectedIndex=Math.max(0,target);select($('channels').selectedIndex);
 }
+$('activateStaff').onclick=async()=>{
+ const button=$('activateStaff');button.disabled=true;status('Turning on Pep Talk…');
+ try{const result=await api('/api/coach-pep-talk',{});if(result.active)await open();else status(result.message);}
+ catch(e){status(e.message)}finally{button.disabled=false}
+};
 $('channels').onchange=()=>{if($('message').value&&!confirm('Discard this draft and change audience?')){$('channels').selectedIndex=channels.indexOf(current);return;}select($('channels').selectedIndex);};
 $('refresh').onclick=()=>history();$('older').onclick=()=>history(older);
 $('composer').onsubmit=async e=>{

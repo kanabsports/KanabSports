@@ -80,5 +80,15 @@ try{
  assert.equal((await modify('remove',rev)).status,409);
  assert.equal((await modify('remove',(await getDetail()).revision)).status,200);
  assert.equal((await getDetail()).players.length,0);
+ sqlite.exec("UPDATE coach_access_requests SET name='Clayton Cutler',team_code='KS-SY7AA4',role='Assistant Coach' WHERE id='other'");
+ const refList=await (await list('','ks_coach=other-token')).json();
+ assert.equal(refList.rosters.length,1);assert.equal(refList.rosters[0].reference,true);
+ const refId=refList.rosters[0].document_id;
+ const ref=await (await list('?id='+refId,'ks_coach=other-token')).json();
+ assert.equal(ref.players.length,17);assert.equal(ref.canEdit,false);
+ assert.deepEqual(Object.keys(ref.players[0]),['student_name']);
+ assert.equal((await list('?id='+refId)).status,404);
+ sqlite.exec("UPDATE coach_access_requests SET team_code='KS-TRAVEL',email='coach@example.test' WHERE id='other'");
+ assert.equal((await list('?id='+approved.document_id,'ks_coach=other-token')).status,200);
  await Promise.all(pending);console.log('PASS: downloaded CSV headers, two guardians, dates and locations, invalid data, authenticated uploads, school gate, saved private roster, pending review, no parent auto-enrollment, server-side parsing, failed notification cleanup. No external messages sent.');
 }finally{globalThis.fetch=originalFetch;sqlite.close()}

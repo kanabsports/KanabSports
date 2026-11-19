@@ -43,7 +43,7 @@ export async function onRequest({request,env,waitUntil}){
     if(!actor)return json({error:'Sign in to your account.'},401);
     const scope=channels(actor,studentEnabled,messagingTeams(env));
     if(request.method==='GET'){
-      if(!scope)return json({channels:[],messages:[]});
+      if(!scope)return url.searchParams.has('team')?json({error:'This audience is unavailable.'},403):json({channels:[],messages:[]});
       const list=(await db.prepare('SELECT DISTINCT team_code,organization_id,team_name,enrollment,student_ref FROM ('+scope.sql+') ORDER BY team_name,student_ref').bind(...scope.args).all()).results;
       if(!url.searchParams.has('team'))return json({channels:list});
       const code=url.searchParams.get('team'),org=url.searchParams.get('org'),enrollment=url.searchParams.get('group')||'';

@@ -28,6 +28,18 @@ const burst=[0,1,2].map(i=>({...base,id:crypto.randomUUID(),body:'Staff play '+i
 assert((await Promise.all([...burst,burst[1]].map(b=>call(audiences,path('coach'),staff,b)))).every(r=>r.status===200));
 assert.equal((await call(audiences,path('coach')+staffChannel,assistant)).data.messages.length,3);
 for(const [role,cookie] of [['parent',parent],['coach','ks_coach='+tokens.coachB],['coach','ks_coach='+tokens.schoolCoach]])assert.equal((await call(audiences,path(role)+staffChannel,cookie)).status,403);
+// The same person tests two distinct approved staff accounts while the general pilot is off.
+const travelOnly={...cfg,PRIVATE_MESSAGING_ENABLED:'false'};
+const {onRequest:activate}=await import('../functions/api/coach-pep-talk.js');
+sqlite.exec("UPDATE school_teams SET kind='travel' WHERE team_code='REC-A'; UPDATE coach_access_requests SET role='Head Coach' WHERE id='coachA'; UPDATE coach_access_requests SET role='Assistant Coach' WHERE id='assistantA'");
+for(const session of [staff,assistant])assert.equal((await call(activate,'/api/coach-pep-talk',session,{},travelOnly)).data.active,true);
+for(const [sender,reader,body] of [[staff,assistant,'Head coach test'],[assistant,staff,'Assistant reply']]){
+ const sent=await call(audiences,path('coach'),sender,{...base,id:crypto.randomUUID(),body},travelOnly);
+ assert.equal(sent.status,200);
+ assert.ok((await call(audiences,path('coach')+staffChannel,reader,null,travelOnly)).data.messages.some(m=>m.body===body));
+}
+assert.equal((await call(audiences,path('parent')+staffChannel,parent,null,travelOnly)).status,403);
+sqlite.exec("UPDATE school_teams SET kind='rec' WHERE team_code='REC-A'");
 const setup='/api/coach-messages',save={action:'set_category',kind:'travel',revision:0};
 assert.equal((await call(coachMessages,setup,parent,save)).status,401);
 assert.equal((await call(coachMessages,setup,staff,save)).status,200);
