@@ -1,3 +1,4 @@
+import {validCoachFile} from '../../assets/coach-file.mjs';
 import {parseCoachRoster,parseCoachSchedule} from '../../assets/coach-csv.mjs';
 import {teamPolicy,trustedOrigin} from '../_lib/school-access.js';
 import {notifyOwner} from '../_lib/owner-push.js';
@@ -24,17 +25,15 @@ export async function onRequestPost({request,env,waitUntil}){
     const file=form.get('pdf'),hasFile=Boolean(file&&typeof file.arrayBuffer==='function'&&file.name);
     let bytes=new Uint8Array(),filename='No file attached',fileKind='';
     if(hasFile){
-      if(file.size<1||file.size>MAX_FILE_BYTES)return json({success:false,error:'The schedule file must be 5 MB or smaller.'},413);
+      if(file.size<1||file.size>MAX_FILE_BYTES)return json({success:false,error:'The upload must be 5 MB or smaller.'},413);
       filename=safeFilename(file.name);const lower=filename.toLowerCase();
-      fileKind=lower.endsWith('.csv')?'csv':lower.endsWith('.pdf')?'pdf':'';
-      if(!fileKind)return json({success:false,error:'Upload a CSV or PDF schedule.'},415);
       bytes=new Uint8Array(await file.arrayBuffer());
-      if(fileKind==='pdf'&&String.fromCharCode(...bytes.subarray(0,5))!=='%PDF-')return json({success:false,error:'That file does not appear to be a valid PDF.'},415);
-      if(documentType==='Roster'&&fileKind!=='csv')return json({success:false,error:'Use a CSV for roster uploads.'},415);
-      if(fileKind==='csv'&&bytes.includes(0))return json({success:false,error:'That CSV does not appear to be a text file.'},415);
+      if(!validCoachFile(filename,bytes))return json({success:false,error:'Choose a valid CSV, PDF, JPG, PNG, or WebP file.'},415);
+      fileKind=lower.split('.').pop();
     }
     if(!hasFile&&!scheduleUrl)return json({success:false,error:'Choose a file to upload.'},400);
-    if(documentType==='Roster'&&!hasFile)return json({success:false,error:'Choose a roster CSV.'},400);
+    if(documentType==='Roster'&&!hasFile)return json({success:false,error:'Choose a roster file.'},400);
+    if(hasFile&&fileKind!=='pdf')scheduleGames=[];
     if(fileKind==='csv'){try{const text=new TextDecoder().decode(bytes);if(documentType==='Roster')rosterRows=parseCoachRoster(text);else scheduleGames=parseCoachSchedule(text)}catch(e){return json({success:false,error:e.message},400)}}
     const id=crypto.randomUUID(),reviewToken=randomToken(),reviewHash=await sha256Exact(reviewToken),reviewExpires=new Date(Date.now()+7*86400000).toISOString(),sourceNotes=[notes,scheduleUrl?`MaxPreps schedule: ${scheduleUrl}`:'',rosterUrl?`MaxPreps roster: ${rosterUrl}`:''].filter(Boolean).join('\n');
     const writes=[env.SPORTS_DB.prepare(`INSERT INTO coach_documents (id,verification_id,name,email,sport,team,document_type,season,notes,filename,byte_size,status,review_token_hash,review_expires_at,is_test,test_expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?,?,0,NULL,datetime('now'))`).bind(id,approved.id,name,email,sport,team,documentType,season,sourceNotes,filename,bytes.byteLength,reviewHash,reviewExpires)];
