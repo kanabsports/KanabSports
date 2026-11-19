@@ -16,9 +16,9 @@ export async function audienceSchema(db){
 // A staff-only group is scoped to an explicitly enrolled team and organization.
 // A joint family message additionally requires a specific current guardian
 // membership and a program-verified teen with documented guardian consent.
-export function channels(actor,studentEnabled){
+export function channels(actor,studentEnabled,teams=eligibleSQL){
   const base='SELECT t.team_code,t.organization_id,t.team_name,t.coach_id,';
-  const from=' FROM ('+eligibleSQL+') t';
+  const from=' FROM ('+teams+') t';
   const staff=base+"'' AS enrollment,'' AS student_ref,'' AS parent_email,'' AS student_email"+from+' WHERE t.coach_id=?';
   const family=base+'e.id AS enrollment,g.student_ref,g.email AS parent_email,e.student_email'+from+`
     JOIN pep_student_enrollments e ON e.organization_id=t.organization_id
