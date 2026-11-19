@@ -24,13 +24,13 @@ const {chromium}=require('playwright-core');
    return route.fulfill({json:data});
   });
   const shot=async(title,copy,selector)=>{
-   const target=page.locator(selector).first();await target.waitFor();
+   console.log('Capturing '+title);const target=page.locator(selector).first();await target.waitFor();
    const image=await target.screenshot({type:'jpeg',quality:75,animations:'disabled'});pictures.push({title,copy,image:image.toString('base64')});
   };
   await page.goto(base+'/index.html',{waitUntil:'domcontentloaded'});
   const nav=page.locator('a[href*="coach-account.html?portal=1"]').first();
   assert.equal(await nav.getAttribute('target'),'_blank');
-  await shot('Open Coach Portal','On the Kanab Sports homepage, choose Coach Portal in the top navigation. Sign-in opens in a separate window or tab.', 'a[href*="coach-account.html?portal=1"]');
+  await shot('Open Coach Portal','On the Kanab Sports homepage, choose Coach Portal in the top navigation. Sign-in opens in a separate window or tab.', '.brandbar');
   await page.goto(base+'/coach-account.html?portal=1');
   await shot('Sign in','Returning coaches enter their email and password. A saved session opens Pep Talk directly. New coaches use Request an account, choose their actual team and role, and wait for approval. The approval email leads to password setup.','#coachLogin');
   await shot('Set a password once','After approval, enter the same email, request the six-digit code, then enter that code and choose a password. If two roles share an email, use the invitation for the intended account.','#setup >> ..');
