@@ -1,0 +1,30 @@
+name: Family push notification regression
+on:
+  pull_request:
+    paths:
+      - assets/family-push.js
+      - family/index.html
+      - functions/api/push.js
+      - functions/_lib/web-push.js
+      - tests/family-push-activation.test.mjs
+      - .github/workflows/family-push-tests.yml
+  push:
+    branches: [main]
+    paths:
+      - assets/family-push.js
+      - family/index.html
+      - functions/api/push.js
+      - functions/_lib/web-push.js
+      - tests/family-push-activation.test.mjs
+      - .github/workflows/family-push-tests.yml
+permissions:
+  contents: read
+jobs:
+  family-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/family-push-activation.test.mjs
