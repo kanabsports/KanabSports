@@ -1,0 +1,23 @@
+name: Coach walkthrough
+on:
+  pull_request:
+    paths: ['tools/coach-walkthrough.cjs', 'assets/score-details.js', 'score-details.html', '.github/workflows/coach-walkthrough.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  walkthrough:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: |
+          npm install --prefix "$RUNNER_TEMP/walkthrough" playwright-core@1.55.0
+          python3 -m http.server 8080 >/tmp/coach-walkthrough-server.log 2>&1 &
+          NODE_PATH="$RUNNER_TEMP/walkthrough/node_modules" node tools/coach-walkthrough.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: illustrated-coach-walkthrough
+          path: coach-walkthrough.html
