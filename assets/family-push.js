@@ -75,7 +75,7 @@ export function mountPush(host,getCodes){
  }
  document.addEventListener('familyconnectionschanged',reconcile);
  (async()=>{
-  const script='/sw.js?v=family-device-test-v2';
+  const script='/sw.js?v=family-unread-badge-v1';
   registration=await navigator.serviceWorker.register(script,{scope:'/',updateViaCache:'none'});
   const worker=registration.installing||registration.waiting||registration.active;
   if(!worker||new URL(worker.scriptURL).search!==new URL(script,location.href).search)throw Error('Reopen My Family to finish updating notifications.');

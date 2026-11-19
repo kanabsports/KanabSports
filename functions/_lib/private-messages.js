@@ -30,6 +30,7 @@ export async function schema(db){
  `CREATE TABLE IF NOT EXISTS private_messages(sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,conversation_id TEXT NOT NULL,sender_role TEXT NOT NULL CHECK(sender_role IN ('parent','coach')),sender_id TEXT NOT NULL,sender_name TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL)`,
  `CREATE INDEX IF NOT EXISTS private_messages_history ON private_messages(conversation_id,sequence)`,
  `CREATE TABLE IF NOT EXISTS private_message_notices(message_id TEXT PRIMARY KEY,status TEXT NOT NULL DEFAULT 'pending',email_status TEXT NOT NULL DEFAULT 'pending',push_status TEXT NOT NULL DEFAULT 'pending',updated INTEGER NOT NULL)`,
+ `CREATE TABLE IF NOT EXISTS private_message_reads(message_id TEXT NOT NULL,role TEXT NOT NULL,identity TEXT NOT NULL,read INTEGER NOT NULL,PRIMARY KEY(message_id,role,identity))`,
  `CREATE TABLE IF NOT EXISTS private_push_devices(id TEXT PRIMARY KEY,endpoint TEXT NOT NULL UNIQUE,role TEXT NOT NULL,identity TEXT NOT NULL,token_hash TEXT NOT NULL,updated INTEGER NOT NULL)`,
  `CREATE TABLE IF NOT EXISTS private_message_limits(key TEXT PRIMARY KEY,count INTEGER NOT NULL,expires INTEGER NOT NULL)`
  ])await db.prepare(sql).run();

@@ -4,6 +4,7 @@ import {accessSchema} from '../_lib/parent-access.js';
 import {findBlockedWords,LANGUAGE_NOTE} from '../../assets/pep-language.mjs';
 import {getCoach,ensureCoachCore,sameOrigin,clean,json} from '../_lib/coach-auth.js';
 import {notifyTeam} from '../_lib/web-push.js';
+import {teamMessagesSchema} from '../_lib/family-unread.js';
 
 export async function onRequest({request,env}){
   if(!env.SPORTS_DB)return json({success:false,error:'Coach messaging is temporarily unavailable.'},503);
@@ -54,8 +55,8 @@ export async function onRequest({request,env}){
     if(Number(recent?.n||0)>=5)return json({success:false,error:'Please wait a minute before posting another update.'},429);
 
     const id=crypto.randomUUID();
-    const inserted=await db.prepare(`INSERT INTO coach_team_messages(id,coach_id,team_code,author,body,created_at)
-      SELECT ?,?,?,?,?,datetime('now') WHERE EXISTS(SELECT 1 FROM school_teams t WHERE t.team_code=? AND (t.kind IN ('rec','travel') OR (t.kind='school' AND t.revision>0 AND t.revision=t.approved_revision AND t.active_batch IS NOT NULL AND t.expires>date('now')))) RETURNING id`)
+    const inserted=await db.prepare(`INSERT INTO coach_team_messages(id,coach_id,team_code,author,body,created_at,category)
+      SELECT ?,?,?,?,?,datetime('now'),'general' WHERE EXISTS(SELECT 1 FROM school_teams t WHERE t.team_code=? AND (t.kind IN ('rec','travel') OR (t.kind='school' AND t.revision>0 AND t.revision=t.approved_revision AND t.active_batch IS NOT NULL AND t.expires>date('now')))) RETURNING id`)
       .bind(id,coach.id,teamCode,coach.name,message,teamCode).first();
     if(!inserted)return json({success:false,error:'School approval changed. Reload before sending.'},409);
 
@@ -85,8 +86,5 @@ export async function ensureTeamCode(db,coach){
 }
 
 async function schema(db){
-  await db.prepare(`CREATE TABLE IF NOT EXISTS coach_team_messages(
-    id TEXT PRIMARY KEY,coach_id TEXT NOT NULL,team_code TEXT NOT NULL,author TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`).run();
-  try{await db.prepare('CREATE INDEX IF NOT EXISTS idx_coach_team_messages_code ON coach_team_messages(team_code,created_at)').run()}catch{}
+  await teamMessagesSchema(db);
 }
