@@ -1,4 +1,4 @@
-import {identity,messagingOrigin,throttle,eligibleSQL} from '../_lib/private-messages.js';
+import {identity,messagingOrigin,throttle,messagingTeams} from '../_lib/private-messages.js';
 import {audienceSchema,channels} from '../_lib/pep-audiences.js';
 import {studentSession} from './student-pep-access.js';
 import {json} from '../_lib/coach-auth.js';
@@ -11,9 +11,9 @@ async function notify(db,env,actor,scope,code,org,enrollment,id){
   const matches=()=>db.prepare('SELECT * FROM ('+scope.sql+') WHERE team_code=? AND organization_id=? AND enrollment=? LIMIT 1').bind(...scope.args,code,org,enrollment).first();
   const thread=await matches();if(!thread)return;
   if(!enrollment){
-    const others=(await db.prepare(eligibleSQL+' AND t.team_code=? AND t.organization_id=? AND a.id<>?').bind(code,org,actor.id).all()).results;
+    const others=(await db.prepare(messagingTeams(env)+' AND t.team_code=? AND t.organization_id=? AND a.id<>?').bind(code,org,actor.id).all()).results;
     for(const c of others){
-      const member=await db.prepare(eligibleSQL+' AND t.team_code=? AND t.organization_id=? AND a.id=?').bind(code,org,c.coach_id).first();
+      const member=await db.prepare(messagingTeams(env)+' AND t.team_code=? AND t.organization_id=? AND a.id=?').bind(code,org,c.coach_id).first();
       if(member&&(await allowedChannels(db,'coach',c.coach_id,'general')).push&&await matches())await notifyCoach(db,c.coach_id,id);
     }
     return;
@@ -32,8 +32,8 @@ async function notify(db,env,actor,scope,code,org,enrollment,id){
 }
 export async function onRequest({request,env,waitUntil}){
   const db=env.SPORTS_DB;
-  if(!db||env.PRIVATE_MESSAGING_ENABLED!=='true')return json({error:'The Pep Talk pilot is not enabled.'},503);
-  const url=new URL(request.url),role=url.searchParams.get('role'),studentEnabled=env.PEP_STUDENT_AUDIENCE_ENABLED==='true';
+  if(!db)return json({error:'The Pep Talk pilot is not enabled.'},503);
+  const url=new URL(request.url),role=url.searchParams.get('role'),studentEnabled=env.PRIVATE_MESSAGING_ENABLED==='true'&&env.PEP_STUDENT_AUDIENCE_ENABLED==='true';
   if(!['coach','parent','student'].includes(role)||(role==='student'&&!studentEnabled))return json({error:'Audience unavailable.'},403);
   try{
     await audienceSchema(db);
@@ -41,7 +41,7 @@ export async function onRequest({request,env,waitUntil}){
     if(role==='student'){const s=await studentSession(request,db);if(s)actor={role,id:s.email};}
     else actor=await identity(request,db,role);
     if(!actor)return json({error:'Sign in to your account.'},401);
-    const scope=channels(actor,studentEnabled);
+    const scope=channels(actor,studentEnabled,messagingTeams(env));
     if(request.method==='GET'){
       if(!scope)return json({channels:[],messages:[]});
       const list=(await db.prepare('SELECT DISTINCT team_code,organization_id,team_name,enrollment,student_ref FROM ('+scope.sql+') ORDER BY team_name,student_ref').bind(...scope.args).all()).results;

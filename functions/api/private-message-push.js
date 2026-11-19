@@ -1,14 +1,16 @@
 import {json} from '../_lib/coach-auth.js';
-import {schema,identity,throttle} from '../_lib/private-messages.js';
+import {schema,identity,actorCanMessage,throttle} from '../_lib/private-messages.js';
 import {pushSchema,keys,digest,validEndpoint,sendPush} from '../_lib/web-push.js';
 export async function onRequest({request,env}){
- if(env.PRIVATE_MESSAGING_ENABLED!=='true'||!env.SPORTS_DB)return json({error:'Private messaging pilot is not enabled.'},503);
+ if(!env.SPORTS_DB)return json({error:'Private messaging pilot is not enabled.'},503);
  const db=env.SPORTS_DB,url=new URL(request.url);
  try{
  if(!['GET','POST'].includes(request.method))return json({error:'Method not allowed.'},405);
  if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)return json({error:'Open Pep to manage notifications.'},403);
  const actor=await identity(request,db,url.searchParams.get('role'));if(!actor)return json({error:'Sign in first.'},401);
- await schema(db);await pushSchema(db);
+ await schema(db);
+ if(!await actorCanMessage(db,env,actor))return json({error:'Pep Talk is waiting for activation. Approved travel coaches can turn it on in Coach Portal → Pep Talk. Parents need approved team access.'},503);
+ await pushSchema(db);
  if(request.method==='GET')return json({publicKey:(await keys(db)).publicKey});
  if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'JSON required.'},415);
  const raw=await request.text();if(raw.length>5000)return json({error:'Request too large.'},413);

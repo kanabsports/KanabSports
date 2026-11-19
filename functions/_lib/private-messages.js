@@ -9,6 +9,7 @@ export async function schema(db){
  for(const sql of [
  `CREATE TABLE IF NOT EXISTS private_message_teams(team_code TEXT PRIMARY KEY,organization_id TEXT NOT NULL,name TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),UNIQUE(team_code,organization_id))`,
  `CREATE TABLE IF NOT EXISTS private_message_coaches(team_code TEXT NOT NULL,coach_id TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),PRIMARY KEY(team_code,coach_id))`,
+ `CREATE TABLE IF NOT EXISTS travel_pep_activations(team_code TEXT NOT NULL,coach_id TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(team_code,coach_id))`,
  `CREATE TABLE IF NOT EXISTS private_conversations(id TEXT PRIMARY KEY,organization_id TEXT NOT NULL,team_code TEXT NOT NULL,parent_email TEXT NOT NULL,coach_id TEXT NOT NULL,created INTEGER NOT NULL,UNIQUE(organization_id,team_code,parent_email,coach_id))`,
  `CREATE INDEX IF NOT EXISTS private_conversations_parent ON private_conversations(parent_email,created)`,
  `CREATE INDEX IF NOT EXISTS private_conversations_coach ON private_conversations(coach_id,created)`,
@@ -36,14 +37,26 @@ export const eligibleSQL=`SELECT t.team_code,t.organization_id,t.name AS team_na
  JOIN coach_access_requests a ON a.id=pc.coach_id
  WHERE t.enabled=1 AND s.kind IN ('rec','travel') AND s.school_id IS NULL
  AND pc.active=1 AND a.status='approved'`;
-export async function eligible(db,team,coach,parent,org){
- return db.prepare(eligibleSQL+` AND t.team_code=? AND a.id=? AND t.organization_id=?
+// The legacy pilot can stay staged while individual approved travel coaches opt in.
+export function travelRestriction(env){
+ return env.PRIVATE_MESSAGING_ENABLED==='true'?'':" AND s.kind='travel' AND lower(a.role) IN ('head coach','assistant coach','coach') AND a.team_code=t.team_code AND EXISTS(SELECT 1 FROM travel_pep_activations x WHERE x.team_code=t.team_code AND x.coach_id=a.id)";
+}
+export function messagingTeams(env){return eligibleSQL+travelRestriction(env)}
+export async function actorCanMessage(db,env,actor){
+ if(env.PRIVATE_MESSAGING_ENABLED==='true')return true;
+ const scope=messagingTeams(env);
+ const query=actor.role==='coach'?scope+' AND a.id=?':scope+" AND EXISTS(SELECT 1 FROM guardian_memberships g WHERE g.team_code=t.team_code AND g.status='approved' AND g.expires>? AND g.email=?)";
+ const args=actor.role==='coach'?[actor.id]:[Date.now(),actor.id];
+ return Boolean(await db.prepare(query+' LIMIT 1').bind(...args).first());
+}
+export async function eligible(db,team,coach,parent,org,env){
+ return db.prepare((env?messagingTeams(env):eligibleSQL)+` AND t.team_code=? AND a.id=? AND t.organization_id=?
  AND EXISTS(SELECT 1 FROM guardian_memberships g WHERE g.team_code=t.team_code AND g.email=? AND g.status='approved' AND g.expires>?)`).bind(team,coach,org,parent,Date.now()).first();
 }
-export async function conversation(db,id,actor){
+export async function conversation(db,id,actor,env){
  const c=await db.prepare('SELECT * FROM private_conversations WHERE id=?').bind(id).first();
  if(!c||!(actor.role==='parent'?c.parent_email===actor.id:c.coach_id===actor.id))return null;
- const access=await eligible(db,c.team_code,c.coach_id,c.parent_email,c.organization_id);
+ const access=await eligible(db,c.team_code,c.coach_id,c.parent_email,c.organization_id,env);
  return access?{...c,...access}:null;
 }
 export async function throttle(db,actor){
@@ -63,7 +76,7 @@ export async function deliver(db,env,messageId){
  if(!claim)return;
  try{
  const m=await db.prepare(`SELECT m.sender_role,m.category,c.* FROM private_messages m JOIN private_conversations c ON c.id=m.conversation_id WHERE m.id=?`).bind(messageId).first();
- const access=m&&await eligible(db,m.team_code,m.coach_id,m.parent_email,m.organization_id);
+ const access=m&&await eligible(db,m.team_code,m.coach_id,m.parent_email,m.organization_id,env);
  if(!access){await db.prepare("UPDATE private_message_notices SET status='suppressed',email_status='suppressed',push_status='suppressed',updated=? WHERE message_id=?").bind(Date.now(),messageId).run();return;}
  const role=m.sender_role==='parent'?'coach':'parent',recipient=role==='coach'?m.coach_id:m.parent_email;
  const link=`${messagingOrigin(env)}/messages/?role=${role}&conversation=${encodeURIComponent(m.id)}`;
@@ -72,7 +85,7 @@ export async function deliver(db,env,messageId){
  const devices=channels.push?(await db.prepare('SELECT id,endpoint FROM private_push_devices WHERE role=? AND identity=?').bind(role,recipient).all()).results||[]:[];
  const statuses=[];
  for(const device of devices){
-  if(!await eligible(db,m.team_code,m.coach_id,m.parent_email,m.organization_id)){statuses.push('suppressed');continue;}
+  if(!await eligible(db,m.team_code,m.coach_id,m.parent_email,m.organization_id,env)){statuses.push('suppressed');continue;}
   try{statuses.push(await sendPush(db,device,'private_push_devices'));}catch{statuses.push('unconfirmed');}
  }
  const push=!channels.push?'muted':devices.length?statuses.every(s=>s==='accepted')?'accepted':statuses.some(s=>s==='accepted')?'partial':'failed':'no_devices';
