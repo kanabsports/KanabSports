@@ -10,5 +10,17 @@
     "publishedAt": "2026-10-31T02:37:10Z",
     "level": "win",
     "maxprepsUrl": "https://www.maxpreps.com/ut/football/game/gunnison-valley-vs-kanab/10-30-2026/?c=ebf18da6-f281-4ba2-835f-41f4d6ef1ff2"
+  },
+  {
+    "id": "basketball-2026-11-20-page",
+    "sport": "Basketball",
+    "team": "Cowboys",
+    "opponent": "Page",
+    "teamScore": 44,
+    "opponentScore": 38,
+    "date": "2026-11-20",
+    "publishedAt": "2026-11-21T03:06:44Z",
+    "level": "win",
+    "maxprepsUrl": "https://www.maxpreps.com/inter-state/basketball/game/kanab-ut-vs-page-az/11-20-2026/?c=2da3f84d-50de-4ccb-886f-9bc1f2fafe0c"
   }
 ]
