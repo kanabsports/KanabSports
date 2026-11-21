@@ -12,5 +12,23 @@
       "uuid": "-6317876760597870596",
       "url": "https://www.instagram.com/stories/kanabsports/4019787705965243550"
     }
+  },
+  "basketball-2026-11-20-page": {
+    "POST": {
+      "status": "claimed",
+      "gameId": "basketball-2026-11-20-page",
+      "format": "POST",
+      "claimId": "win-watch-2026-11-21T03:09:48Z-bmrovxsr0b5-POST",
+      "claimedAt": "2026-11-21T03:09:48Z",
+      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/0672346a84bd0fbfb6f0c61849d1ea067b75d6df/social/cards/basketball-2026-11-20-page/feed.jpg"
+    },
+    "STORY": {
+      "status": "claimed",
+      "gameId": "basketball-2026-11-20-page",
+      "format": "STORY",
+      "claimId": "win-watch-2026-11-21T03:09:48Z-bmrovxsr0b5-STORY",
+      "claimedAt": "2026-11-21T03:09:48Z",
+      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/0672346a84bd0fbfb6f0c61849d1ea067b75d6df/social/cards/basketball-2026-11-20-page/story.jpg"
+    }
   }
 }
