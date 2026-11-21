@@ -15,7 +15,7 @@
   },
   "basketball-2026-11-20-page": {
     "POST": {
-      "status": "pending",
+      "status": "published",
       "gameId": "basketball-2026-11-20-page",
       "format": "POST",
       "claimId": "win-watch-2026-11-21T03:09:48Z-bmrovxsr0b5-POST",
@@ -24,10 +24,13 @@
       "metricoolId": 436336412,
       "uuid": "1196609264082046170",
       "scheduledAt": "2026-11-20T20:12:01-07:00",
-      "plannerUrl": "https://app.metricool.com/planner/calendar?blogId=7530083&openWithPostUuid=1196609264082046170"
+      "plannerUrl": "https://app.metricool.com/planner/calendar?blogId=7530083&openWithPostUuid=1196609264082046170",
+      "providerStatus": "PUBLISHED",
+      "url": "https://www.instagram.com/p/Df_PIdvCvWp/",
+      "verifiedAt": "2026-11-21T03:13:36Z"
     },
     "STORY": {
-      "status": "pending",
+      "status": "published",
       "gameId": "basketball-2026-11-20-page",
       "format": "STORY",
       "claimId": "win-watch-2026-11-21T03:09:48Z-bmrovxsr0b5-STORY",
@@ -36,7 +39,10 @@
       "metricoolId": 436336669,
       "uuid": "-5475372772630901105",
       "scheduledAt": "2026-11-20T20:12:33-07:00",
-      "plannerUrl": "https://app.metricool.com/planner/calendar?blogId=7530083&openWithPostUuid=-5475372772630901105"
+      "plannerUrl": "https://app.metricool.com/planner/calendar?blogId=7530083&openWithPostUuid=-5475372772630901105",
+      "providerStatus": "PUBLISHED",
+      "url": "https://www.instagram.com/stories/kanabsports/4035010561909087166",
+      "verifiedAt": "2026-11-21T03:13:36Z"
     }
   }
 }
