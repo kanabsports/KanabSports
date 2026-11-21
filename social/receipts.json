@@ -46,7 +46,7 @@
       "scheduledAt": "2026-11-20T22:33:29-07:00"
     },
     "STORY": {
-      "status": "claimed",
+      "status": "pending",
       "gameId": "basketball-2026-11-20-page",
       "format": "STORY",
       "claimId": "2026-11-21T05:31:11.727Z-replacement-STORY",
@@ -70,7 +70,11 @@
           "removalConfirmedByUser": true
         }
       ],
-      "replacementReason": "User requested sport-ball artwork and confirmed original removed"
+      "replacementReason": "User requested sport-ball artwork and confirmed original removed",
+      "metricoolId": 436396194,
+      "uuid": "893130664255570512",
+      "plannerUrl": "https://app.metricool.com/planner/calendar?blogId=7530083&openWithPostUuid=893130664255570512",
+      "scheduledAt": "2026-11-20T22:33:40-07:00"
     }
   }
 }
