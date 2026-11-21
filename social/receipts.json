@@ -27,12 +27,16 @@
       "plannerUrl": "https://app.metricool.com/planner/calendar?blogId=7530083&openWithPostUuid=1196609264082046170"
     },
     "STORY": {
-      "status": "claimed",
+      "status": "pending",
       "gameId": "basketball-2026-11-20-page",
       "format": "STORY",
       "claimId": "win-watch-2026-11-21T03:09:48Z-bmrovxsr0b5-STORY",
       "claimedAt": "2026-11-21T03:09:48Z",
-      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/0672346a84bd0fbfb6f0c61849d1ea067b75d6df/social/cards/basketball-2026-11-20-page/story.jpg"
+      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/0672346a84bd0fbfb6f0c61849d1ea067b75d6df/social/cards/basketball-2026-11-20-page/story.jpg",
+      "metricoolId": 436336669,
+      "uuid": "-5475372772630901105",
+      "scheduledAt": "2026-11-20T20:12:33-07:00",
+      "plannerUrl": "https://app.metricool.com/planner/calendar?blogId=7530083&openWithPostUuid=-5475372772630901105"
     }
   }
 }
