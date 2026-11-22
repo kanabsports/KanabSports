@@ -1,12 +1,12 @@
 {
-  "id": "basketball-2026-11-20-page",
-  "sport": "Basketball",
-  "team": "Cowboys",
-  "opponent": "Page",
-  "teamScore": 44,
-  "opponentScore": 38,
-  "date": "2026-11-20",
-  "publishedAt": "2026-11-21T03:06:44Z",
+  "id": "girls-basketball-2026-11-21-chinle",
+  "sport": "Girls Basketball",
+  "team": "Lady Cowboys",
+  "opponent": "Chinle",
+  "teamScore": 66,
+  "opponentScore": 20,
+  "date": "2026-11-21",
+  "publishedAt": "2026-11-22T03:52:41.343Z",
   "level": "win",
-  "maxprepsUrl": "https://www.maxpreps.com/inter-state/basketball/game/kanab-ut-vs-page-az/11-20-2026/?c=2da3f84d-50de-4ccb-886f-9bc1f2fafe0c"
+  "maxprepsUrl": "https://www.maxpreps.com/ut/kanab/kanab-cowboys/basketball/girls/"
 }
