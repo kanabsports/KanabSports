@@ -106,5 +106,29 @@
       "alertedAt": "2026-11-21T12:54:28.184Z",
       "nextAction": "Update the automatic card template to the approved sport-ball style with visible #sGoCowboys and render corrected assets while preserving originals."
     }
+  },
+  "girls-basketball-2026-11-21-chinle": {
+    "POST": {
+      "status": "blocked",
+      "gameId": "girls-basketball-2026-11-21-chinle",
+      "format": "POST",
+      "blockedAt": "2026-11-22T03:53:31.701Z",
+      "blocker": "automatic-artwork-branding",
+      "details": "Automatic renderer lacks the requested sport-ball celebration style; Story artwork also lacks required #sGoCowboys. No Metricool submission made.",
+      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/ee28041e522cc7c31728302a287619dec1506800/social/cards/girls-basketball-2026-11-21-chinle/feed.jpg",
+      "alertedAt": "2026-11-22T03:53:31.701Z",
+      "nextAction": "Update the automatic card template to the approved sport-ball style with visible #sGoCowboys and render corrected assets while preserving originals."
+    },
+    "STORY": {
+      "status": "blocked",
+      "gameId": "girls-basketball-2026-11-21-chinle",
+      "format": "STORY",
+      "blockedAt": "2026-11-22T03:53:31.701Z",
+      "blocker": "automatic-artwork-branding",
+      "details": "Automatic renderer lacks the requested sport-ball celebration style; Story artwork also lacks required #sGoCowboys. No Metricool submission made.",
+      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/ee28041e522cc7c31728302a287619dec1506800/social/cards/girls-basketball-2026-11-21-chinle/story.jpg",
+      "alertedAt": "2026-11-22T03:53:31.701Z",
+      "nextAction": "Update the automatic card template to the approved sport-ball style with visible #sGoCowboys and render corrected assets while preserving originals."
+    }
   }
 }
