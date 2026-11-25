@@ -46,5 +46,17 @@
     "publishedAt": "2026-11-22T03:52:41.343Z",
     "level": "win",
     "maxprepsUrl": "https://www.maxpreps.com/ut/kanab/kanab-cowboys/basketball/girls/"
+  },
+  {
+    "id": "basketball-2026-11-24-valley",
+    "sport": "Basketball",
+    "team": "Cowboys",
+    "opponent": "Valley",
+    "teamScore": 50,
+    "opponentScore": 46,
+    "date": "2026-11-24",
+    "publishedAt": "2026-11-25T07:23:54Z",
+    "level": "win",
+    "maxprepsUrl": "https://www.maxpreps.com/ut/basketball/game/kanab-vs-valley-orderville/11-24-2026/?c=88884512-bbfb-468a-b42e-60114a07fac3"
   }
 ]
