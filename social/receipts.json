@@ -130,5 +130,29 @@
       "alertedAt": "2026-11-22T03:53:31.701Z",
       "nextAction": "Update the automatic card template to the approved sport-ball style with visible #sGoCowboys and render corrected assets while preserving originals."
     }
+  },
+  "basketball-2026-11-24-valley": {
+    "POST": {
+      "status": "blocked",
+      "gameId": "basketball-2026-11-24-valley",
+      "format": "POST",
+      "blockedAt": "2026-11-25T07:24:50Z",
+      "blocker": "automatic-artwork-branding",
+      "details": "Automatic renderer lacks the requested sport-ball celebration style; Story artwork also lacks required #sGoCowboys. No Metricool submission made.",
+      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/9e6f29158a4bb5a5c2be62fcb84265dafc705e28/social/cards/basketball-2026-11-24-valley/feed.jpg",
+      "alertedAt": "2026-11-25T07:24:50Z",
+      "nextAction": "Update the automatic card template to the approved sport-ball style with visible #sGoCowboys and render corrected assets while preserving originals."
+    },
+    "STORY": {
+      "status": "blocked",
+      "gameId": "basketball-2026-11-24-valley",
+      "format": "STORY",
+      "blockedAt": "2026-11-25T07:24:50Z",
+      "blocker": "automatic-artwork-branding",
+      "details": "Automatic renderer lacks the requested sport-ball celebration style; Story artwork also lacks required #sGoCowboys. No Metricool submission made.",
+      "mediaUrl": "https://raw.githubusercontent.com/kanabsports/KanabSports/9e6f29158a4bb5a5c2be62fcb84265dafc705e28/social/cards/basketball-2026-11-24-valley/story.jpg",
+      "alertedAt": "2026-11-25T07:24:50Z",
+      "nextAction": "Update the automatic card template to the approved sport-ball style with visible #sGoCowboys and render corrected assets while preserving originals."
+    }
   }
 }
